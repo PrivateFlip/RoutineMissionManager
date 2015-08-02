@@ -1,0 +1,10 @@
+Routine Mission Manager is released under a modified BSD license. See source code for license text.
+
+This mod makes use of Module Manager, made by ialdabaoth. Currently Module Manger is being maintained by sarbian (KSP forum link: http://forum.kerbalspaceprogram.com/threads/55219-Module-Manager-1-5-6-(Jan-6))
+
+ialdabaoth has stated the following: "Plugin developers and other modders have my explicit permission to redistribute this dll with their own works, so long as you give credit to me and provide a URL back to this forum post." ialdabaoth forum post for Module Manager on the KSP forum can be reached with the following URL: 
+http://forum.kerbalspaceprogram.com/threads/31342-0-20-ModuleManager-1-3-for-all-your-stock-modding-needs. 
+
+
+Thanks to sarbian's Kerbal Crew Manifest which showed me all steps related to the basic the crew handling.
+Thanks to NavyFish's Docking Port Alignment Indicator for showing how to calculate the angle I needed to rotate the docking port of the arriving vessel towards the destination vessel.
