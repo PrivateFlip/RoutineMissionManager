@@ -31,6 +31,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEngine;
+using KSP.UI.Screens;
 
 
 namespace CommercialOfferings
@@ -38,7 +39,7 @@ namespace CommercialOfferings
     public partial class RMMModule : PartModule
     {
         string[] allowedBodies = null;
-
+        string[] allowedHomeBodies = null;
 
         //Resources 
 
@@ -53,12 +54,12 @@ namespace CommercialOfferings
             return (amount * prd.unitCost);
         }
 
-        private double getCargoMass()
+        private double getCargoMass(string returnResourcesString)
         {
             double cargoMass = 0.0;
 
             string[] cargoArray = new string[0];
-            getCargoArray(ref cargoArray);
+            getCargoArray(returnResourcesString, ref cargoArray);
 
             foreach (Part p in vessel.parts)
             {
@@ -73,10 +74,10 @@ namespace CommercialOfferings
             return (cargoMass);
         }
 
-        private void getCargoArray(ref string[] cargoArray)
+        private void getCargoArray(string returnResourcesString, ref string[] cargoArray)
         {
             string[] propellantArray = new string[0];
-            getProppellantArray(ref propellantArray);
+            getProppellantArray(returnResourcesString, ref propellantArray);
 
             foreach (Part p in vessel.parts)
             {
@@ -91,7 +92,22 @@ namespace CommercialOfferings
             }
         }
 
-        private void getProppellantArray(ref string[] propellantArray)
+        private void getProppellantArray(string returnResourcesString, ref string[] propellantArray)
+        {
+            string[] SplitArray = returnResourcesString.Split(',');
+
+            foreach (String st in SplitArray)
+            {
+                string[] SplatArray = st.Split(':');
+                string resourceName = SplatArray[0].Trim();
+                double amount = Convert.ToDouble(SplatArray[1].Trim());
+
+                Array.Resize(ref propellantArray, propellantArray.Length + 1);
+                propellantArray[propellantArray.Length - 1] = resourceName;
+            }
+        }
+
+        private void determineProppellantArray(ref string[] propellantArray)
         {
             foreach (Part p in vessel.parts)
             {
@@ -126,6 +142,16 @@ namespace CommercialOfferings
                     if (pm.ClassName == "ModuleRCS")
                     {
                         ModuleRCS mrcs = p.Modules.OfType<ModuleRCS>().FirstOrDefault();
+                        if (!propellantArray.Contains(mrcs.resourceName) && mrcs.resourceName != "ElectricCharge")
+                        {
+                            Array.Resize(ref propellantArray, propellantArray.Length + 1);
+                            propellantArray[propellantArray.Length - 1] = mrcs.resourceName;
+                        }
+                    }
+
+                    if (pm.ClassName == "ModuleRCSFX")
+                    {
+                        ModuleRCS mrcs = p.Modules.OfType<ModuleRCSFX>().FirstOrDefault();
                         if (!propellantArray.Contains(mrcs.resourceName) && mrcs.resourceName != "ElectricCharge")
                         {
                             Array.Resize(ref propellantArray, propellantArray.Length + 1);
@@ -223,7 +249,12 @@ namespace CommercialOfferings
             return (capacity);
         }
 
-        public bool bodyAllowed()
+        public bool AllowedBody()
+        {
+            return AllowedBody(vessel.mainBody.name);
+        }
+
+        public bool AllowedBody(string bodyName)
         {
             if (allowedBodies == null)
             {
@@ -236,6 +267,41 @@ namespace CommercialOfferings
             }
 
             return(false);
+        }
+
+        public bool HomeBody()
+        {
+            return HomeBody(vessel.mainBody.name);
+        }
+
+        public bool HomeBody(string bodyName)
+        {
+            if (allowedHomeBodies == null)
+            {
+                allowedHomeBodies = System.IO.File.ReadAllLines(GamePath + CommercialOfferingsPath + "HomeBodies.txt");
+            }
+
+            foreach (String allowedHomeBody in allowedHomeBodies)
+            {
+                if (bodyName == allowedHomeBody.Trim()) { return (true); }
+            }
+
+            return (false);
+        }
+
+        public string HomeBodyName()
+        {
+            if (allowedHomeBodies == null)
+            {
+                allowedHomeBodies = System.IO.File.ReadAllLines(GamePath + CommercialOfferingsPath + "HomeBodies.txt");
+            }
+
+            foreach (String allowedHomeBody in allowedHomeBodies)
+            {
+                return allowedHomeBody.Trim();
+            }
+
+            return ("Home");
         }
 
         private static void CompleteContractParameter(object objInstance)

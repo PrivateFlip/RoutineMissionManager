@@ -31,6 +31,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEngine;
+using KSP.UI.Screens;
 
 namespace CommercialOfferings
 {
@@ -38,35 +39,36 @@ namespace CommercialOfferings
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class RMMGeneral : MonoBehaviour
     {
-        System.IO.DirectoryInfo GamePath;
-        string CommercialOfferingsPath = "/GameData/RoutineMissionManager/";
+
+      
 
         //stock toolbar button
-        private static ApplicationLauncherButton toolBarButton;
-        private static Texture2D toolBarButtonTexture;
+        private ApplicationLauncherButton toolBarButton;
+        private Texture2D toolBarButtonTexture;
 
         private double lastUpdateToolBarTime = 0.0f;
 
-        string[] allowedBodies = null;
+        private string[] allowedBodies = null;
 
         //GUI
-        private static GUIStyle windowStyle, labelStyle, labelTextStyle, redlabelStyle, textFieldStyle, buttonStyle, horiScrollBarStyle, vertiScrollBarStyle;
 
         //GUI Location
-        private static Rect windowPosGUILocation = new Rect(450, 200, 350, 30);
+        private bool renderGUILocation = false;
+        private Rect windowPosGUILocation = new Rect(450, 200, 350, 30);
         private Vector2 scrollPositionModules;
         private RMMModule rmmmSelectGUI = null;
 
         //GUI TermsCondi
-        private static Rect windowPosGUITermsCondi = new Rect(400, 250, 250, 300);
+        private bool renderGUITermsCondi = false;
+        private Rect windowPosGUITermsCondi = new Rect(400, 250, 250, 300);
         private Vector2 scrollPositionDisc;
 
-        List<RMMModule> RegisteredModuleList = new List<RMMModule>();
+        private List<RMMModule> RegisteredModuleList = new List<RMMModule>();
 
         public void Awake()
         {
-            GamePath = System.IO.Directory.GetParent(Application.dataPath);
-            RenderingManager.AddToPostDrawQueue(754, OnDraw);
+            renderGUILocation = false;
+            renderGUITermsCondi = false;
         }
 
         void onDestroy()
@@ -74,16 +76,36 @@ namespace CommercialOfferings
             if (toolBarButton != null) { removeToolbarButton(); }
         }
 
-        private void OnDraw()
+       private void OnGUI()
         {
-            updateToolBar();
+            if (Event.current.type == EventType.Repaint || Event.current.isMouse)
+            {
+                // preDraw code
+            }
+
+            drawGUI();
         }
 
+        private void drawGUI()
+        {
+            //Toolbar button
+            updateToolBar();
+
+            //GUI rendering
+            if (renderGUILocation)
+            {
+                drawGUILocation();
+            }
+            if (renderGUITermsCondi)
+            {
+                drawGUITermsCondi();
+            }
+        }
+            
         private void updateToolBar()
         {
 
             if (HighLogic.LoadedScene != GameScenes.FLIGHT || (lastUpdateToolBarTime + 3) > Planetarium.GetUniversalTime() || !ApplicationLauncher.Ready) { return; }
-
             if (toolBarButton == null && toolBarButtonVisible()) { addToolbarButton(); }
             if (toolBarButton != null && !toolBarButtonVisible()) { removeToolbarButton(); }
 
@@ -93,7 +115,6 @@ namespace CommercialOfferings
         private void addToolbarButton()
         {
             toolBarButtonTexture = GameDatabase.Instance.GetTexture("RoutineMissionManager/Textures/RMMbutton", false);
-
             toolBarButton = ApplicationLauncher.Instance.AddModApplication(
                                 onToggleOn,
                                 onToggleOff,
@@ -113,12 +134,12 @@ namespace CommercialOfferings
 
         void onToggleOn()
         {
-            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH) { startTracking();}
+            if (RmmUtil.IsPreLaunch(FlightGlobals.ActiveVessel)) { startTracking(); }
 
             if (trackingActive()) { startTracking(); return; }
 
             if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING &&
-                (FlightGlobals.ActiveVessel.mainBody.name == "Kerbin" || FlightGlobals.ActiveVessel.mainBody.name == "Mun" || FlightGlobals.ActiveVessel.mainBody.name == "Minmus"))
+                bodyAllowed())
             {
                 startRoutine();
             }
@@ -135,7 +156,7 @@ namespace CommercialOfferings
                     {
                         RMMModule aRMMModule;
                         aRMMModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        aRMMModule.closeGUITracking();
+                        aRMMModule.CloseGUITracking();
                     }
                 }
             }           
@@ -143,7 +164,7 @@ namespace CommercialOfferings
 
         private bool toolBarButtonVisible()
         {
-            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH ||
+            if (RmmUtil.IsPreLaunch(FlightGlobals.ActiveVessel) ||
                 (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING &&
                  bodyAllowed() &&
                  hasDockingPorts()) ||
@@ -166,17 +187,17 @@ namespace CommercialOfferings
                     {
                         count++;
                         aRMMModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (aRMMModule.trackingPrimary) { aRMMModule.openGUITracking(); return; }
+                        if (aRMMModule.trackingPrimary) { aRMMModule.OpenGUITracking(); return; }
                     }
                 }
             }
 
-            if (count == 1) { aRMMModule.openGUITracking(); return; }
+            if (count == 1) { aRMMModule.OpenGUITracking(); return; }
         }
 
         private void startRoutine()
         {
-            if (!File.Exists(GamePath + CommercialOfferingsPath + "UserAcknowledgesKnownBugs")) { openGUITermsCondi(); return; }
+            if (!File.Exists(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "UserAcknowledgesKnownBugs")) { openGUITermsCondi(); return; }
             openGUILocation();
         }
 
@@ -190,7 +211,7 @@ namespace CommercialOfferings
                     {
                         RMMModule aRMMModule;
                         aRMMModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (aRMMModule.trackingActive && aRMMModule.trackingPrimary && !aRMMModule.foreignDockingPorts(p.vessel)) { return true; }
+                        if (aRMMModule.trackingActive && aRMMModule.trackingPrimary && !RmmUtil.ForeignDockingPorts(p.vessel, aRMMModule.trackID)) { return true; }
                     }
                 }
             }
@@ -216,7 +237,7 @@ namespace CommercialOfferings
         {
             if (allowedBodies == null)
             {
-                allowedBodies = System.IO.File.ReadAllLines(GamePath + CommercialOfferingsPath + "AllowedBodies.txt");
+                allowedBodies = System.IO.File.ReadAllLines(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "AllowedBodies.txt");
             }
 
             foreach (String allowedBody in allowedBodies)
@@ -227,36 +248,12 @@ namespace CommercialOfferings
             return (false);
         }
 
-        private void initStyle()
+        public Texture2D SimpleTexture(Color color)
         {
-            windowStyle = new GUIStyle(HighLogic.Skin.window);
-            windowStyle.stretchWidth = false;
-            windowStyle.stretchHeight = false;
+            var texture = new Texture2D(1, 1);
+            texture.SetPixel(1, 1, color);
 
-            labelStyle = new GUIStyle(HighLogic.Skin.label);
-            labelStyle.stretchWidth = false;
-            labelStyle.stretchHeight = false;
-
-            labelTextStyle = new GUIStyle(HighLogic.Skin.label);
-            labelTextStyle.stretchWidth = false;
-            labelTextStyle.stretchHeight = true;
-            labelTextStyle.wordWrap = true;
-
-            redlabelStyle = new GUIStyle(HighLogic.Skin.label);
-            redlabelStyle.stretchWidth = false;
-            redlabelStyle.stretchHeight = false;
-            redlabelStyle.normal.textColor = Color.red;
-
-            textFieldStyle = new GUIStyle(HighLogic.Skin.textField);
-            textFieldStyle.stretchWidth = false;
-            textFieldStyle.stretchHeight = false;
-
-            buttonStyle = new GUIStyle(HighLogic.Skin.button);
-            buttonStyle.stretchHeight = false;
-            buttonStyle.stretchWidth = false;
-
-            horiScrollBarStyle = new GUIStyle(HighLogic.Skin.horizontalScrollbar);
-            vertiScrollBarStyle = new GUIStyle(HighLogic.Skin.verticalScrollbar);
+            return texture;
         }
 
         /// <summary>
@@ -275,14 +272,11 @@ namespace CommercialOfferings
             
             GUILayout.BeginVertical();
 
-
-
-
-            scrollPositionModules = GUILayout.BeginScrollView(scrollPositionModules, true, false, horiScrollBarStyle, GUIStyle.none, GUILayout.Width(350), GUILayout.Height(50));
+            scrollPositionModules = GUILayout.BeginScrollView(scrollPositionModules, true, false, RmmStyle.Instance.HoriScrollBarStyle, GUIStyle.none, GUILayout.Width(350), GUILayout.Height(50));
             GUILayout.BeginHorizontal();
             foreach (RMMModule rmmm in RegisteredModuleList)
             {
-                if (GUILayout.Button(rmmm.PortCode, buttonStyle, GUILayout.Height(30)))
+                if (GUILayout.Button(rmmm.PortCode, RmmStyle.Instance.ButtonStyle, GUILayout.Height(30)))
                 {
                     if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
                     rmmmSelectGUI = rmmm;
@@ -298,21 +292,20 @@ namespace CommercialOfferings
 
         private void drawGUILocation()
         {
-            windowPosGUILocation = GUILayout.Window(3408, windowPosGUILocation, WindowGUILocation, "Location " + FlightGlobals.ActiveVessel.vesselName, windowStyle);
+            windowPosGUILocation = GUILayout.Window(3408, windowPosGUILocation, WindowGUILocation, "Location " + FlightGlobals.ActiveVessel.vesselName, RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUILocation()
         {
-            closeGUILocation();
-            initStyle();
             makeRegisteredModuleList();
-            RenderingManager.AddToPostDrawQueue(348, new Callback(drawGUILocation));
+            if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
+            renderGUILocation = true;
         }
 
         public void closeGUILocation()
         {
             if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
-            RenderingManager.RemoveFromPostDrawQueue(348, new Callback(drawGUILocation));
+            renderGUILocation = false;
         }
 
         private void makeRegisteredModuleList()
@@ -346,7 +339,7 @@ namespace CommercialOfferings
 
             GUILayout.BeginVertical();
 
-            scrollPositionDisc = GUILayout.BeginScrollView(scrollPositionDisc, false, true, GUIStyle.none, vertiScrollBarStyle , GUILayout.Width(240), GUILayout.Height(300));
+            scrollPositionDisc = GUILayout.BeginScrollView(scrollPositionDisc, false, true, GUIStyle.none, RmmStyle.Instance.VertiScrollBarStyle , GUILayout.Width(240), GUILayout.Height(300));
 
             GUILayout.Label( 
             "Our scientist have discovered docking ports are in fact very round in nature. This new-found knowledge explains why ships can dock in so many different ways to a docking port. In practice ships have been seen to dock straight, canted slightly to the left, a full quarter to the right and even almost upside down with a two degree counterclockwise offset." + Environment.NewLine +
@@ -354,11 +347,11 @@ namespace CommercialOfferings
             "But all this metaphysical nonsense aside, docking is already super hard on our Kerbonauts. They can't be expected to align two docking ports together and also control the relative rotation of the approach. That's like totally doing two things at the same time!" + Environment.NewLine +
             Environment.NewLine +
             "So when you order a mission to be executed unsupervised through the Routine Mission Manager, you should make sure every possible rotation between the current target docking port and the mission vessel does not lead to a collision between parts of the station and the approaching vessel. If you can not make sure of this you should not order this mission in combination with this docking port."            
-            ,labelTextStyle,GUILayout.Width(205));
+            ,RmmStyle.Instance.LabelTextStyle,GUILayout.Width(205));
 
-            if (GUILayout.Button("I understand and acknowledge", buttonStyle, GUILayout.Height(30)))
+            if (GUILayout.Button("I understand and acknowledge", RmmStyle.Instance.ButtonStyle, GUILayout.Height(30)))
             {
-                System.IO.File.Create(GamePath + CommercialOfferingsPath + "UserAcknowledgesKnownBugs");
+                System.IO.File.Create(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "UserAcknowledgesKnownBugs");
                 closeGUITermsCondi();
             }
             GUILayout.EndScrollView();
@@ -368,20 +361,22 @@ namespace CommercialOfferings
 
         private void drawGUITermsCondi()
         {
-            windowPosGUITermsCondi = GUILayout.Window(3409, windowPosGUITermsCondi, WindowGUITermsCondi, "New science breakthrough!", windowStyle);
+            windowPosGUITermsCondi = GUILayout.Window(3409, windowPosGUITermsCondi, WindowGUITermsCondi, "New science breakthrough!", RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUITermsCondi()
         {
-            closeGUITermsCondi();
-            initStyle();
-            RenderingManager.AddToPostDrawQueue(353, new Callback(drawGUITermsCondi));
+            renderGUITermsCondi = true;
         }
 
         public void closeGUITermsCondi()
         {
-            RenderingManager.RemoveFromPostDrawQueue(353, new Callback(drawGUITermsCondi));
+            renderGUITermsCondi = false;
         }
 
+        internal void OnDestroy()
+        {
+            if (toolBarButton != null) { removeToolbarButton(); }
+        }
     }
 }

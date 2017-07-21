@@ -31,6 +31,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEngine;
+using KSP.UI.Screens;
 
 namespace CommercialOfferings
 {
@@ -38,35 +39,40 @@ namespace CommercialOfferings
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class RMMGeneral : MonoBehaviour
     {
-        System.IO.DirectoryInfo GamePath;
-        string CommercialOfferingsPath = "/GameData/RoutineMissionManager/";
+        string GamePath;
+        string CommercialOfferingsPath = "GameData" + Path.DirectorySeparatorChar + "RoutineMissionManager" +  Path.DirectorySeparatorChar;
+      
 
         //stock toolbar button
-        private static ApplicationLauncherButton toolBarButton;
-        private static Texture2D toolBarButtonTexture;
+        private ApplicationLauncherButton toolBarButton;
+        private Texture2D toolBarButtonTexture;
 
         private double lastUpdateToolBarTime = 0.0f;
 
-        string[] allowedBodies = null;
+        private string[] allowedBodies = null;
 
         //GUI
-        private static GUIStyle windowStyle, labelStyle, labelTextStyle, redlabelStyle, textFieldStyle, buttonStyle, horiScrollBarStyle, vertiScrollBarStyle;
+        private GUIStyle windowStyle, labelStyle, labelTextStyle, redlabelStyle, textFieldStyle, buttonStyle, horiScrollBarStyle, vertiScrollBarStyle;
+        private bool initializedStyles = false;
 
         //GUI Location
-        private static Rect windowPosGUILocation = new Rect(450, 200, 350, 30);
+        private bool renderGUILocation = false;
+        private Rect windowPosGUILocation = new Rect(450, 200, 350, 30);
         private Vector2 scrollPositionModules;
         private RMMModule rmmmSelectGUI = null;
 
         //GUI TermsCondi
-        private static Rect windowPosGUITermsCondi = new Rect(400, 250, 250, 300);
+        private bool renderGUITermsCondi = false;
+        private Rect windowPosGUITermsCondi = new Rect(400, 250, 250, 300);
         private Vector2 scrollPositionDisc;
 
-        List<RMMModule> RegisteredModuleList = new List<RMMModule>();
+        private List<RMMModule> RegisteredModuleList = new List<RMMModule>();
 
         public void Awake()
         {
-            GamePath = System.IO.Directory.GetParent(Application.dataPath);
-            RenderingManager.AddToPostDrawQueue(754, OnDraw);
+            renderGUILocation = false;
+            renderGUITermsCondi = false;
+            GamePath = KSPUtil.ApplicationRootPath;
         }
 
         void onDestroy()
@@ -74,16 +80,42 @@ namespace CommercialOfferings
             if (toolBarButton != null) { removeToolbarButton(); }
         }
 
-        private void OnDraw()
+       private void OnGUI()
         {
-            updateToolBar();
+            if (Event.current.type == EventType.Repaint || Event.current.isMouse)
+            {
+                // preDraw code
+            }
+
+            drawGUI();
         }
 
+        private void drawGUI()
+        {
+            if (!initializedStyles)
+            {
+                initStyle();
+                initializedStyles = true;
+            }
+
+            //Toolbar button
+            updateToolBar();
+
+            //GUI rendering
+            if (renderGUILocation)
+            {
+                drawGUILocation();
+            }
+            if (renderGUITermsCondi)
+            {
+                drawGUITermsCondi();
+            }
+        }
+            
         private void updateToolBar()
         {
 
             if (HighLogic.LoadedScene != GameScenes.FLIGHT || (lastUpdateToolBarTime + 3) > Planetarium.GetUniversalTime() || !ApplicationLauncher.Ready) { return; }
-
             if (toolBarButton == null && toolBarButtonVisible()) { addToolbarButton(); }
             if (toolBarButton != null && !toolBarButtonVisible()) { removeToolbarButton(); }
 
@@ -93,7 +125,6 @@ namespace CommercialOfferings
         private void addToolbarButton()
         {
             toolBarButtonTexture = GameDatabase.Instance.GetTexture("RoutineMissionManager/Textures/RMMbutton", false);
-
             toolBarButton = ApplicationLauncher.Instance.AddModApplication(
                                 onToggleOn,
                                 onToggleOff,
@@ -113,12 +144,12 @@ namespace CommercialOfferings
 
         void onToggleOn()
         {
-            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH) { startTracking();}
+            if (isPreLaunch()) { startTracking(); }
 
             if (trackingActive()) { startTracking(); return; }
 
             if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING &&
-                (FlightGlobals.ActiveVessel.mainBody.name == "Kerbin" || FlightGlobals.ActiveVessel.mainBody.name == "Mun" || FlightGlobals.ActiveVessel.mainBody.name == "Minmus"))
+                bodyAllowed())
             {
                 startRoutine();
             }
@@ -143,7 +174,7 @@ namespace CommercialOfferings
 
         private bool toolBarButtonVisible()
         {
-            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH ||
+            if (isPreLaunch() ||
                 (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING &&
                  bodyAllowed() &&
                  hasDockingPorts()) ||
@@ -275,9 +306,6 @@ namespace CommercialOfferings
             
             GUILayout.BeginVertical();
 
-
-
-
             scrollPositionModules = GUILayout.BeginScrollView(scrollPositionModules, true, false, horiScrollBarStyle, GUIStyle.none, GUILayout.Width(350), GUILayout.Height(50));
             GUILayout.BeginHorizontal();
             foreach (RMMModule rmmm in RegisteredModuleList)
@@ -303,16 +331,16 @@ namespace CommercialOfferings
 
         public void openGUILocation()
         {
-            closeGUILocation();
             initStyle();
             makeRegisteredModuleList();
-            RenderingManager.AddToPostDrawQueue(348, new Callback(drawGUILocation));
+            if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
+            renderGUILocation = true;
         }
 
         public void closeGUILocation()
         {
             if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
-            RenderingManager.RemoveFromPostDrawQueue(348, new Callback(drawGUILocation));
+            renderGUILocation = false;
         }
 
         private void makeRegisteredModuleList()
@@ -373,15 +401,32 @@ namespace CommercialOfferings
 
         public void openGUITermsCondi()
         {
-            closeGUITermsCondi();
-            initStyle();
-            RenderingManager.AddToPostDrawQueue(353, new Callback(drawGUITermsCondi));
+            renderGUITermsCondi = true;
         }
 
         public void closeGUITermsCondi()
         {
-            RenderingManager.RemoveFromPostDrawQueue(353, new Callback(drawGUITermsCondi));
+            renderGUITermsCondi = false;
         }
 
+        internal void OnDestroy()
+        {
+            if (toolBarButton != null) { removeToolbarButton(); }
+        }
+
+        private bool isPreLaunch()
+        {
+            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH ||
+                (FlightGlobals.ActiveVessel.situation == Vessel.Situations.LANDED &&
+                 (FlightGlobals.ActiveVessel.landedAt == "KSC_LaunchPad_Platform" ||
+                  FlightGlobals.ActiveVessel.landedAt == "Runway")))
+            {
+                return (true);
+            }
+            else
+            {
+                return (false);
+            }
+        }
     }
 }

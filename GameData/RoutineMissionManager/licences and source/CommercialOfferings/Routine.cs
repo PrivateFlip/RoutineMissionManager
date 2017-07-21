@@ -31,6 +31,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEngine;
+using KSP.UI.Screens;
 using Contracts;
 
 namespace CommercialOfferings
@@ -38,15 +39,6 @@ namespace CommercialOfferings
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public partial class RMMModule : PartModule
     {
-        /*[KSPField(isPersistant = true, guiActive = false)]
-        public bool disablefunctionality = false;*/
-
-        [KSPField(isPersistant = false, guiActive = false)]
-        public bool DevMode = false;
-
-        System.IO.DirectoryInfo GamePath;
-        string CommercialOfferingsPath = "/GameData/RoutineMissionManager/";
-
         List<Offering> OfferingsList = new List<Offering>();
 
         //current mission
@@ -88,29 +80,26 @@ namespace CommercialOfferings
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Port Code", guiUnits = "")]
         public string PortCode = "";
 
-        //GUI
-        private static GUIStyle windowStyle, labelStyle, redlabelStyle, textFieldStyle, buttonStyle;
-
         [KSPField(isPersistant = true, guiActive = false)]
         public bool OrderingEnabled = true;
 
         //GUI Main
+        private bool renderGUIMain = false;
         private static Rect windowPosGUIMain = new Rect(200, 200, 200, 450);
         private Vector2 scrollPositionAvailableCommercialOfferings;
         public float windowGUIMainX = 1;
         public float windowGUIMainY = 1;
         public float windowGUIMainWidth = 10;
 
-        //public bool boolMissionRepeat = false;
-        //public string strMissionRepeatDelay = "";
-
         Offering selectedOffering = new Offering();
 
         //GUI Offering
+        private bool renderGUIOffering = false;
         private static Rect windowPosGUIOffering = new Rect(300, 100, 100, 100);
         Offering GUIOffering = new Offering();
 
         //GUI Order
+        private bool renderGUIMission = false;
         private static Rect windowPosGUIMission = new Rect(500, 400, 300, 75);
         Offering GUIMission = new Offering();
         private int intCrewCount = 0;
@@ -118,13 +107,15 @@ namespace CommercialOfferings
         //private string strGUIerrmess = "";
 
         //GUI Pref Crew
+        private bool renderGUIPrefCrew = false;
         private static Rect windowPosGUIPrefCrew = new Rect(700, 200, 200, 600);
         List<ProtoCrewMember> preferredCrewList = new List<ProtoCrewMember>();
         private Vector2 scrollPositionPreferredCrew;
         private Vector2 scrollPositionAvailableCrew;
 
         //GUI Register Port
-        private static Rect windowPosRegister = new Rect(300, 300, 240, 100);
+        private bool renderGUIRegister = false;
+        private static Rect windowPosGUIRegister = new Rect(300, 300, 240, 100);
         public string StrPortCode = "";
 
         //commercialvehiclemode
@@ -139,51 +130,10 @@ namespace CommercialOfferings
         private Offering commercialvehicleOffering = new Offering();
         private bool commercialvehicleOfferingLoaded = false;
 
-        public override void OnAwake()
-        {
-            if (HighLogic.LoadedSceneIsFlight)
-            {
-                //print("waking");
-                GamePath = System.IO.Directory.GetParent(Application.dataPath);
-                if (part != null){ part.force_activate(); }
-                ArrivalStage = 0;
-                nextLogicTime = Planetarium.GetUniversalTime();
 
-                if (DevMode) { OrderingEnabled = true; }
-            }
-        }
-
-        public override void OnFixedUpdate()
-        {
-            if (!HighLogic.LoadedSceneIsFlight) { return; }
-            setModule();
-            if (nextLogicTime == 0 || nextLogicTime > Planetarium.GetUniversalTime()) { return; }
-            if (vessel.packed || !vessel.loaded)
-            {
-                nextLogicTime = Planetarium.GetUniversalTime();
-                return;
-            }
-
-            //if (!moduleSet) { setModule(); moduleSet = true; }
-
-            if (trackingActive || trackingPrimary)
-            {
-                if (!handleTracking()) {return; }
-            }
-            else
-            {
-                if (!handleCommercialVehicleMode()) { return; }
-                handleArrivalCompletion();
-            }
-        }
 
         private void setModule()
         {
-//            if (OrderingEnabled && vessel.situation == Vessel.Situations.ORBITING && (vessel.mainBody.name == "Kerbin" || vessel.mainBody.name == "Mun" || vessel.mainBody.name == "Minmus"))
-//                Events["ordering"].guiActive = true;
-//            else
-//                Events["ordering"].guiActive = false;
-
             if (commercialvehiclemode && commercialvehicleOfferingLoaded)
             {
                 Events["setAutoDepart"].guiActive = true;
@@ -193,9 +143,8 @@ namespace CommercialOfferings
                 Events["setAutoDepart"].guiActive = false;
             }
 
-            if ((vessel.situation == Vessel.Situations.PRELAUNCH && !trackingActive) || (returnMission && checkDocked()))
+            if ((isPreLaunch() && !trackingActive) || (returnMission && checkDocked()))
             {
-//                Events["ordering"].guiActive = false;
                 Events["tracking"].guiActive = true;
             }
             else
@@ -203,7 +152,7 @@ namespace CommercialOfferings
                 Events["tracking"].guiActive = false;
             }
 
-            if (PortCode == "" && vessel.situation == Vessel.Situations.ORBITING && bodyAllowed())
+            if (PortCode == "" && vessel.situation == Vessel.Situations.ORBITING && AllowedBody())
                 Events["register"].guiActive = true;
             else
                 Events["register"].guiActive = false;
@@ -225,16 +174,6 @@ namespace CommercialOfferings
                     }
                 }
 
-                //commercialvehicleOffering.folderName = commercialvehicleFolderName;
-                //if (File.Exists(GamePath + CommercialOfferingsPath + "/Offerings/" + commercialvehicleOffering.folderName + "/info.txt"))
-                //{
-                //    commercialvehicleOffering.loadOffering(GamePath + CommercialOfferingsPath + "/Offerings/" + commercialvehicleOffering.folderName + "/info.txt");
-                //}
-                //else
-                //{
-                //    print("Commercial Offerings Plugin unable to load " + commercialvehicleOffering.folderName);
-                //    return;
-                //}
                 return (true);
             }
 
@@ -275,14 +214,12 @@ namespace CommercialOfferings
                 {
                     if (!otherModulesCompletingArrival())
                     {
-                        //print(part.flightID + "executing");
                         ArrivalStage = 1;
                         completeArrival = true;
                         nextLogicTime = Planetarium.GetUniversalTime();
                     }
                     else
                     {
-                        //print(part.flightID + "waiting");
                         ArrivalStage = 0;
                         nextLogicTime = Planetarium.GetUniversalTime() + 1.25;
                     }
@@ -314,36 +251,27 @@ namespace CommercialOfferings
                         }
                         dockStage4();
                         break;
+                    case 5:
+                        dockStage5();
+                        break;
                 }
             }
         }
 
         private void dockStage1()
         {
-            //print("stage1 " + Planetarium.GetUniversalTime());
-
-
             loadOfferings();
 
-            //print(missionFolderName);
             foreach (Offering Off in OfferingsList)
             {
-                //print(Off.folderName);
                 if (missionFolderName == Off.folderName)
                 {
                     missionOffering = Off;
-                    //print("got ehm");
                 }
             }
             if (missionOffering == null) { abortArrival(); return; }
 
             //load Offering of current mission
-            //missionOffering = new Offering();
-            //missionOffering.folderName = missionFolderName;
-            //if (File.Exists(GamePath + CommercialOfferingsPath + "/Offerings/" + missionOffering.folderName + "/info.txt"))
-            //{
-            //    missionOffering.loadOffering(GamePath + CommercialOfferingsPath + "/Offerings/" + missionOffering.folderName + "/info.txt");
-            //}
 
             if (offeringAllowed(missionOffering) && crewAvailable(missionOffering))
             {
@@ -363,7 +291,6 @@ namespace CommercialOfferings
 
         private void dockStage2()
         {
-            //print("stage2 " + Planetarium.GetUniversalTime());
             toMapView();
             ProtoVessel ProtoFlightVessel = loadVessel(missionFolderName);
             if (ProtoFlightVessel == null) { abortArrival(); return; }
@@ -383,7 +310,6 @@ namespace CommercialOfferings
             {
                 if (ve.vesselName == tempID)
                 {
-                    //print(ve.vesselName);
                     transactionVessel = ve;
                     transactionVessel.vesselName = missionOffering.VehicleName;
                     placeVesselForRendezvous(transactionVessel, vessel);
@@ -423,24 +349,19 @@ namespace CommercialOfferings
 
         private void dockStage4()
         {
-            //print("stage3 " + Planetarium.GetUniversalTime());
             toMapView();
             Part placePort = new Part();
 
             int portNumber = 0;
-            //print("mis port " + missionOffering.Port);
             foreach (Part p in transactionVessel.parts)
             {
                 foreach (PartModule pm in p.Modules)
                 {
                     if (pm.ClassName == "ModuleDockingNode")
                     {
-                        //print("portnum " + portNumber);
                         RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        //ComOffMod.disablefunctionality = true;
                         if (ComOffMod.trackingPrimary == true)
                         {
-                            //print("yo " + portNumber);
                             placePort = p;
                             if (missionOffering.ReturnEnabled)
                             {
@@ -461,59 +382,35 @@ namespace CommercialOfferings
             }
 
             transactionVessel.targetObject = null;
-//            ModuleDockingNode dockingPort = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-//
-//            print(dockingPort.dockedPartUId.ToString());
-//
-//            //print(vessel.vesselName + " " + (dockingPort.state.Length >= 6 && dockingPort.state.Substring(0, 6) == "Docked" && null != dockingPort.vesselInfo.name));
-//            if (dockingPort.state.Length >= 6 && dockingPort.state.Substring(0, 6) == "Docked" && null != dockingPort.vesselInfo.name)
-//                print("ori" + true);
-//
-//            if (dockingPort.dockedPartUId == 0) { print("is zero" + true); }
-//
-//            foreach (Part p in vessel.parts)
-//            {
-//                if (p.flightID == dockingPort.dockedPartUId)
-//                {
-//                    print("found");
-//                    foreach (PartModule pm in p.Modules)
-//                    {
-//                        if (pm.ClassName == "ModuleDockingNode")
-//                        {
-//                            //print("portnum " + portNumber);
-//                            ModuleDockingNode joinedDockingPort = p.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-//                            if (part.flightID == joinedDockingPort.dockedPartUId)
-//                            {
-//                                if (joinedDockingPort.state.Length >= 6 && joinedDockingPort.state.Substring(0, 6) == "Docked" && null != joinedDockingPort.vesselInfo.name)
-//                                    print("joi" + true); ;
-//                            }
-//                        }
-//                    }
-//                }
-//            }
+
+
             handleLoadCrew(transactionVessel, missionCrewCount, missionOffering.MinimumCrew);
+
             handleContracts(transactionVessel, true, false);
+            
             if (!checkDocked() && checkDockingPortCompatibility(placePort, part))
             {
-                //print("st");
-                
-                //print("st2");
                 placeVesselForDock(transactionVessel, placePort, vessel, part, missionOffering.DockingDistance);
-                ScreenMessages.PostScreenMessage(missionOffering.VehicleName + " docked", 4, ScreenMessageStyle.UPPER_CENTER);
+
+                nextLogicTime = Planetarium.GetUniversalTime();
+                ArrivalStage = 5;
             }
             else
             {
                  ScreenMessages.PostScreenMessage(missionOffering.VehicleName + " rendezvoused", 4, ScreenMessageStyle.UPPER_CENTER);
+                 finishArrival();
             }
-            missionUnderway = false;
-            completeArrival = false;
+        }
 
-            nextLogicTime = 0;
-            ArrivalStage = -1;
-
-            if (missionRepeat)
+        private void dockStage5()
+        {
+            toMapView();
+            if (checkDocked()
+                || (nextLogicTime < (Planetarium.GetUniversalTime() - 8)))
             {
-                procureOffering(missionOffering, true);
+                ScreenMessages.PostScreenMessage(missionOffering.VehicleName + " docked", 4, ScreenMessageStyle.UPPER_CENTER);
+
+                finishArrival();
             }
         }
 
@@ -571,7 +468,6 @@ namespace CommercialOfferings
                     foreach (ProtoCrewMember c in clc)
                     {
                         p.RemoveCrew(c);
-                        //print("remove");
                     }
                 }
             }
@@ -583,8 +479,6 @@ namespace CommercialOfferings
             }
             catch
             {
-                //abortArrival();
-                //return false;
                 return true;
             }
         }
@@ -613,9 +507,7 @@ namespace CommercialOfferings
             {
                 if (!ves.packed && ves.loaded)
                 {
-                    //print("scale" + ves.vesselName);
                     int scale = vesselScale(ves);
-                    //print("scale" + scale);
                     if (scale > rendezvousDistance)
                     {
                         rendezvousDistance = scale;
@@ -626,14 +518,10 @@ namespace CommercialOfferings
             bool good;
             int attempts = 0;
 
-            //print("ren.dist" + rendezvousDistance);
-
             do
             {
                 good = true;
                 attempts = attempts + 1;
-                //print("attempts:" + attempts);
-                //print("rend " + rendezvousDistance);
                 if (rendezvousDistance > 115) { rendezvousDistance = 115; }
                 if (rendezvousDistance <= 0) { rendezvousDistance = 100; }
 
@@ -643,7 +531,6 @@ namespace CommercialOfferings
                 double y = 0;
                 double z = 0;
                 int ra = rand.Next(3);
-                //print("ra " + ra);
                 switch (ra)
                 {
                     case 0:
@@ -662,9 +549,6 @@ namespace CommercialOfferings
                         z = (double)rendezvousDistance;
                         break;
                 }
-                //print("x" + x);
-                //print("y" + y);
-                //print("z" + z);
                 if (rand.Next(0, 2) == 1)
                 {
                     x = x * -1;
@@ -677,15 +561,11 @@ namespace CommercialOfferings
                 {
                     z = z * -1;
                 }
-                //print("x" + x);
-                //print("y" + y);
-                //print("z" + z);
 
                 offset.x = x;
                 offset.y = y;
                 offset.z = z;
 
-                //print(offset);
 
                 // check if offset is far enough from all vessels in area
                 foreach (Vessel ves in FlightGlobals.Vessels)
@@ -694,7 +574,6 @@ namespace CommercialOfferings
                     {
                         
                         var dist = Vector3.Distance(ves.orbit.pos, targetVessel.orbit.pos + offset);
-                        //print("name vessel " + ves.vesselName + " " + dist);
                         if (dist < rendezvousDistance)
                         {
                             good = false;
@@ -729,75 +608,32 @@ namespace CommercialOfferings
 
         private void placeVesselForDock(Vessel placeVessel, Part placePort, Vessel targetVessel, Part targetPort, float distanceFactor)
         {
-            //print("st3");
+
             ModuleDockingNode placeDockingNode = placePort.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-            //print("st4");
+
             ModuleDockingNode targetDockingNode = targetPort.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-            //print("st5");
-            //print("0 " + placeDockingNode.controlTransform.position);
 
 
-            //print("p9 " + targetDockingNode.controlTransform.rotation);
-            //print("r9 " + placeVessel.vesselTransform.rotation);
-            //rotate vessel
-            //placeDockingNode.MakeReferenceTransform();
+
             QuaternionD placeVesselRotation = targetDockingNode.controlTransform.rotation * Quaternion.Euler(180f, (float)rand.Next(0, 360), 0);
             placeVessel.SetRotation(placeVesselRotation);
-            //
+
             placeVessel.SetRotation(placeDockingNode.controlTransform.rotation * Quaternion.Euler(0, (float)rand.Next(0, 360), 0));
-            //print("ae " + placeVessel.vesselTransform.rotation);
-            //print("as " + placeVesselRotation);
 
-            //print("aw " + Quaternion.FromToRotation(placeVessel.vesselTransform.up, -placeDockingNode.controlTransform.up).eulerAngles.ToString());
-            //print("as " + placeDockRotation.eulerAngles.ToString());
-
-            //Vector3.Cross
-
-            //QuaternionD placeVesselRotation = placeDockRotation - (placeDockingNod.controlTransform.rotation -
-
-            //print("aa" + placeDockingNode.nodeTransform.forward.normalized);
-            //print("aa" + placeDockingNode.nodeTransform.forward.normalized);
-
-            //print(Vector3.Angle(Vector3.Cross(placeDockingNode.nodeTransform.forward.normalized, placeVessel.vesselTransform.up.normalized),Vector3.Cross(placeVessel.vesselTransform.forward.normalized, placeVessel.vesselTransform.up.normalized)));
-            //print(Vector3.Angle(Vector3.Cross(targetDockingNode.nodeTransform.forward.normalized, placeVessel.vesselTransform.up.normalized), Vector3.Cross(placeVessel.vesselTransform.forward.normalized, placeVessel.vesselTransform.up.normalized)));
 
             float anglePlaceDock = angleNormal(placeDockingNode.nodeTransform.forward.normalized, placeVessel.vesselTransform.forward.normalized, placeVessel.vesselTransform.up.normalized);
             float angleTargetDock = angleNormal(-targetDockingNode.nodeTransform.forward.normalized, placeVessel.vesselTransform.forward.normalized, placeVessel.vesselTransform.up.normalized);
 
-            //print(anglePlaceDock - angleTargetDock);
-
-            //print(anglePlaceDock);
-            //print(angleTargetDock);
 
             placeVessel.SetRotation(placeVessel.vesselTransform.rotation * Quaternion.Euler(0, (anglePlaceDock - angleTargetDock), 0));
 
-            //print("p1 " + placeVessel.ReferenceTransform.position);
-            //print("p1 " + placeVessel.ReferenceTransform.rotation);
-            //print("r1 " + placeVessel.vesselTransform.rotation);
             //position vessel
-
-            /*print("1 " + targetDockingNode.controlTransform.position);
-            print("1.3 " + targetDockingNode.controlTransform.up.normalized);*/
-            //print((placeDockingNode.controlTransform.up.normalized - placeDockingNode.controlTransform.position));
-
             Vector3d placePortLocation = targetDockingNode.nodeTransform.position + (targetDockingNode.nodeTransform.forward.normalized * distanceFactor);
-            //Vector3d placePortLocation = targetDockingNode.controlTransform.position + (targetDockingNode.controlTransform.up.normalized * distanceFactor);
-            /*print("2 " + placePortLocation);
-            print("3 " + (placePort.transform.position - placeVessel.ReferenceTransform.position));
-            print("4 " + (placePort.transform.position - placeVessel.ReferenceTransform.position));*/
 
-            //print("12 " + placeVessel.ReferenceTransform.position);
             Vector3d placeVesselPosition = placePortLocation + (placeVessel.vesselTransform.position - placeDockingNode.nodeTransform.position);
-            //Vector3d placeVesselPosition = placePortLocation + (placeVessel.ReferenceTransform.position - placeDockingNode.nodeTransform.position);
-            //Vector3d placeVesselPosition = placePortLocation + (placeVessel.ReferenceTransform.position - placeDockingNodecontrolTransform.position);
-            //print("4 " + placeVesselPosition);
-            //Vector3d FlightVesselPosition = new Vector3d((placeVesselPosition - targetVessel.mainBody.transform.position).x, (placeVesselPosition - targetVessel.mainBody.transform.position).z, (placeVesselPosition - targetVessel.mainBody.transform.position).y);
-            //print((FlightGlobals.ActiveVessel.orbit.pos - FlightVesselPosition));
 
             placeVessel.SetPosition(placeVesselPosition);
-            //print("q " + placeVessel.vesselTransform.position);
-            //print("w " +placeVessel.ReferenceTransform.position);
-            //print(placeVessel.vesselTransform.position);
+
         }
 
 
@@ -816,6 +652,20 @@ namespace CommercialOfferings
             return Vector3.Angle(measureAngle, referenceAngle);
         }
 
+        private void finishArrival()
+        {
+            missionUnderway = false;
+            completeArrival = false;
+
+            nextLogicTime = 0;
+            ArrivalStage = -1;
+
+            if (missionRepeat)
+            {
+                procureOffering(missionOffering, true);
+            }
+        }
+
         private void abortArrival()
         {
             missionUnderway = false;
@@ -829,8 +679,6 @@ namespace CommercialOfferings
         //Thanks to sarbian's Kerbal Crew Manifest for showing all this crew handling stuff
         private void handleLoadCrew(Vessel ves, int crewCount, int minCrew)
         {
-            //print("crewCount " + crewCount);
-            //print(ves.GetCrewCapacity());
             if (ves.GetCrewCapacity() < crewCount)
                 crewCount = ves.GetCrewCapacity();
 
@@ -841,7 +689,6 @@ namespace CommercialOfferings
             {
                 if (p.CrewCapacity > p.protoModuleCrew.Count)
                 {
-                    //print(p.CrewCapacity + " " + p.protoModuleCrew.Count);
                     for (int i = 0; i < p.CrewCapacity && crewCount > 0; i++)
                     {
                         bool added = false;
@@ -960,10 +807,8 @@ namespace CommercialOfferings
 
         private void unloadCrew(ProtoCrewMember crew, Part p, bool savereturn)
         {
-            //print("rem " + crew.name);
             p.RemoveCrewmember(crew);
-            //crew.seat.DespawnCrew();
-            //crew.seat = null;
+
             if (savereturn)
             {
                 crew.rosterStatus = ProtoCrewMember.RosterStatus.Available;
@@ -1002,11 +847,6 @@ namespace CommercialOfferings
             //angle
             if (angleD > Math.Abs(vessel.orbit.inclination - INCsave) || angleD > Math.Abs(Math.Abs(vessel.orbit.inclination - INCsave) - 360)) { parameters[2] = true; }
 
-            //print("SMA " + parameters[0] + ((vessel.orbit.semiMajorAxis - SMAsave) / SMAsave));
-            //print("ECC " + parameters[1] + Math.Abs(vessel.orbit.eccentricity - ECCsave));
-            //print("INC " + parameters[2] + Math.Abs(vessel.orbit.inclination - INCsave) + " or " + Math.Abs(Math.Abs(vessel.orbit.inclination - INCsave) - 360));
-
-
             if (parameters[0] == false || parameters[1] == false || parameters[2] == false)
             {
                 return (false);
@@ -1020,8 +860,6 @@ namespace CommercialOfferings
         private bool checkDocked()
         {
             ModuleDockingNode dockingPort = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-
-            //print(vessel.vesselName + " " + (dockingPort.state.Length >= 6 && dockingPort.state.Substring(0, 6) == "Docked" && null != dockingPort.vesselInfo.name));
 
             //this port is docked
             if (dockingPort.state.Length >= 6 && dockingPort.state.Substring(0, 6) == "Docked" && null != dockingPort.vesselInfo.name)
@@ -1055,7 +893,6 @@ namespace CommercialOfferings
         private bool checkDocking()
         {
             ModuleDockingNode dockingPort = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-            //print(vessel.vesselName + " " + (dockingPort.state.Length >= 6 && dockingPort.state.Substring(0, 6) == "Docked" && null != dockingPort.vesselInfo.name));
             if (dockingPort.state.Length >= 7 && dockingPort.state.Substring(0, 7) == "Acquire")
                 return (true);
             else
@@ -1065,17 +902,13 @@ namespace CommercialOfferings
 
         private void handleAutoDepart()
         {
-            //print("handleAutoDepart");
-            //print(offeringAllowed(commercialvehicleOffering));
-            //print(returnResourcesAvailable(commercialvehicleOffering));
-            //print(minimalCrewPresent(commercialvehicleOffering));
-            //print(commercialvehiclePartCount + " " + countVesselParts(vessel));
             if (autoDepartAllowed(commercialvehicleOffering)
                 && vesselClean(vessel)
                 && returnResourcesAvailable(commercialvehicleOffering)
                 && minimalCrewPresent(commercialvehicleOffering))
             {
                 toMapView();
+
                 handleContracts(vessel, false, true);
 
                 if (commercialvehicleOffering.SafeReturn && HighLogic.CurrentGame.Mode == Game.Modes.CAREER)
@@ -1087,11 +920,10 @@ namespace CommercialOfferings
                 vessel.Unload();
                 vessel.Die();
                 
-                ScreenMessages.PostScreenMessage(commercialvehicleOffering.VehicleName + " returned to Kerbin", 4, ScreenMessageStyle.UPPER_CENTER);
+                ScreenMessages.PostScreenMessage(commercialvehicleOffering.VehicleName + " returned to " + HomeBodyName(), 4, ScreenMessageStyle.UPPER_CENTER);
             }
             else
             {
-                //print("no depart");
                 vehicleAutoDepart = false;
             }
         }
@@ -1104,7 +936,7 @@ namespace CommercialOfferings
 
             double cargoMass = commercialvehicleOffering.ReturnCargoMass;
             string[] cargoArray = new string[0];
-            getCargoArray(ref cargoArray);
+            getCargoArray(commercialvehicleOffering.ReturnResources, ref cargoArray);
 
             orderCargoArray(ref cargoArray);
 
@@ -1116,7 +948,6 @@ namespace CommercialOfferings
                     {
                         if (r.info.name == s)
                         {
-                            //print(r.info.name);
                             if (r.amount != 0)
                             {
                                 if (mass(r.info.name, r.amount) <= cargoMass)
@@ -1127,7 +958,6 @@ namespace CommercialOfferings
                                 else
                                 {
                                     fee = fee + ((cargoMass / mass(r.info.name, r.amount)) * cost(r.info.name, r.amount));
-                                    //print(fee);
                                     return fee;
                                 }
                             }
@@ -1135,7 +965,6 @@ namespace CommercialOfferings
                     }
                 }
             }
-            //print(fee);
             return fee;
         }
 
@@ -1242,7 +1071,7 @@ namespace CommercialOfferings
             string[] SplitArray = Off.ReturnResources.Split(',');
 
             string[] arrResource = new string[0];
-            getProppellantArray(ref arrResource);
+            determineProppellantArray(ref arrResource);
 
             foreach (String st in SplitArray)
             {
@@ -1260,7 +1089,7 @@ namespace CommercialOfferings
 
         private bool returnCargoMassNotExceeded(Offering Off)
         {
-            if (Off.ReturnCargoMass == 0.0 || getCargoMass() <= Off.ReturnCargoMass * 1.1)
+            if (Off.ReturnCargoMass == 0.0 || getCargoMass(Off.ReturnResources) <= Off.ReturnCargoMass * 1.1)
             {
                 return true;
             }
@@ -1408,7 +1237,7 @@ namespace CommercialOfferings
                     ConfigNode savenode = new ConfigNode();
                     vessel.BackupVessel();
                     vessel.protoVessel.Save(savenode);
-                    savenode.Save(GamePath + CommercialOfferingsPath + "/Missions/DevMode/vesselfile");
+                    savenode.Save(GamePath + CommercialOfferingsPath + Path.DirectorySeparatorChar + "Missions" + Path.DirectorySeparatorChar + "DevMode" + Path.DirectorySeparatorChar + "vesselfile");
                 }
             }
             //
@@ -1420,6 +1249,12 @@ namespace CommercialOfferings
             GUILayout.EndVertical();
         }
 
+//      [KSPEvent(name = "ordering", isDefault = false, guiActive = true, guiName = "Available Missions")]
+        public void ordering()
+        {
+            openGUIMain();
+        }
+
         private void drawGUIMain()
         {
             windowPosGUIMain.xMin = windowGUIMainX;
@@ -1429,64 +1264,23 @@ namespace CommercialOfferings
             windowPosGUIMain = GUILayout.Window(3404, windowPosGUIMain, WindowGUIMain, "Docking Port " + PortCode, windowStyle);
         }
 
-
-
-//        [KSPEvent(name = "ordering", isDefault = false, guiActive = true, guiName = "Available Missions")]
-        public void ordering()
-        {
-            openGUIMain();
-        }
-
         public void openGUIMain()
         {
-            closeGUIMain();
-            initStyle();
             loadOfferings();
 
-            if (selectedOffering != null)
-            {
-                
-            }
-
-            RenderingManager.AddToPostDrawQueue(340, new Callback(drawGUIMain));
+            renderGUIMain = true;
         }
 
         public void closeGUIMain()
         {
-            RenderingManager.RemoveFromPostDrawQueue(340, new Callback(drawGUIMain));
+            renderGUIMain = false;
         }
 
         public void loadOfferings()
         {
             OfferingsList.Clear();
 
-
-            //print("loading offerings");
-            //load standard offerings
-            //            string[] directoryOfferings = Directory.GetDirectories(GamePath + CommercialOfferingsPath + "/Offerings");
-            //
-            //            foreach (String dir in directoryOfferings)
-            //            {
-            //                //print(dir);
-            //                Offering Off = new Offering();
-            //
-            //                Off.folderName = Path.GetFileName(dir);
-            //                if (File.Exists(GamePath + CommercialOfferingsPath + "/Offerings/" + Off.folderName + "/info.txt"))
-            //                {
-            //                    Off.loadOffering(GamePath + CommercialOfferingsPath + "/Offerings/" + Off.folderName + "/info.txt");
-            //
-            //                    if (offeringAllowed(Off))
-            //                    {
-            //                        OfferingsList.Add(Off);
-            //                        //print("loaded " + Off.Name);
-            //                    }
-            //                }
-            //            }
-
-            //print("aaa " + GamePath);
-
-            loadOfferingsDirectory(GamePath + "/GameData");
-
+            loadOfferingsDirectory(GamePath + Path.DirectorySeparatorChar + "GameData");
 
             if (missionFolderName != "")
             {
@@ -1502,8 +1296,8 @@ namespace CommercialOfferings
 
         private void loadOfferingsDirectory(string searchDirectory)
         {
-            
-            if (File.Exists(searchDirectory + "/CommercialOfferingsPackMarkerFile"))
+
+            if (File.Exists(searchDirectory + Path.DirectorySeparatorChar + "CommercialOfferingsPackMarkerFile"))
             {
                 string[] directoryOfferings = Directory.GetDirectories(searchDirectory);
 
@@ -1513,15 +1307,14 @@ namespace CommercialOfferings
                     Offering Off = new Offering();
                     
                     Off.folderName = dir.Substring(GamePath.ToString().Length, dir.Length - GamePath.ToString().Length);
-                    
-                    if (File.Exists(GamePath + Off.folderName + "/info.txt"))
+
+                    if (File.Exists(GamePath + Off.folderName + Path.DirectorySeparatorChar + "info.txt"))
                     {
-                        Off.loadOffering(GamePath + Off.folderName + "/info.txt");
+                        Off.loadOffering(GamePath + Off.folderName + Path.DirectorySeparatorChar + "info.txt");
 
                         if (offeringAllowed(Off))
                         {
                             OfferingsList.Add(Off);
-                            //print("loaded " + Off.Name);
                         }
                     }
                 }
@@ -1705,14 +1498,13 @@ namespace CommercialOfferings
 
         public void openGUIOffering()
         {
-            closeGUIOffering();
-            RenderingManager.AddToPostDrawQueue(341, new Callback(drawGUIOffering));
             print(GUIOffering.Name + " in folder: " + GUIOffering.folderName);
+            renderGUIOffering = true;
         }
 
         public void closeGUIOffering()
         {
-            RenderingManager.RemoveFromPostDrawQueue(341, new Callback(drawGUIOffering));
+            renderGUIOffering = false;
         }
 
         /// <summary>
@@ -1741,12 +1533,9 @@ namespace CommercialOfferings
 
                 if (GUILayout.Button("set", buttonStyle, GUILayout.Width(50), GUILayout.Height(22)))
                 {
-                    //print(intCrewCount);
                     int.TryParse(strCrewCount, out intCrewCount);
-                    //print(intCrewCount);
                     if (intCrewCount < GUIOffering.MinimumCrew) { intCrewCount = GUIOffering.MinimumCrew; }
                     if (intCrewCount > GUIOffering.MaximumCrew) { intCrewCount = GUIOffering.MaximumCrew; }
-                    //print(intCrewCount);
                 }
                 GUILayout.EndHorizontal();
             }
@@ -1782,13 +1571,12 @@ namespace CommercialOfferings
 
         public void openGUIMission()
         {
-            closeGUIMission();
-            RenderingManager.AddToPostDrawQueue(344, new Callback(drawGUIMission));
+            renderGUIMission = true;
         }
 
         public void closeGUIMission()
         {
-            RenderingManager.RemoveFromPostDrawQueue(344, new Callback(drawGUIMission));
+            renderGUIMission = false;
         }
 
         public void procureOffering(Offering Off,bool repeat)
@@ -1860,17 +1648,20 @@ namespace CommercialOfferings
             scrollPositionAvailableCrew = GUILayout.BeginScrollView(scrollPositionAvailableCrew, false, true, GUILayout.Width(200), GUILayout.Height(300));
             foreach (ProtoCrewMember cr in HighLogic.CurrentGame.CrewRoster.Crew)
             {
-                if (GUILayout.Button(cr.name, buttonStyle, GUILayout.Width(165), GUILayout.Height(22)))
+                if (cr.rosterStatus != ProtoCrewMember.RosterStatus.Dead)
                 {
-                    bool alreadyAdded = false;
-                    foreach (ProtoCrewMember cre in preferredCrewList)
+                    if (GUILayout.Button(cr.name, buttonStyle, GUILayout.Width(165), GUILayout.Height(22)))
                     {
-                        if (cre.name == cr.name)
+                        bool alreadyAdded = false;
+                        foreach (ProtoCrewMember cre in preferredCrewList)
                         {
-                            alreadyAdded = true;
+                            if (cre.name == cr.name)
+                            {
+                                alreadyAdded = true;
+                            }
                         }
+                        if (!alreadyAdded) { preferredCrewList.Add(cr); }
                     }
-                    if (!alreadyAdded) { preferredCrewList.Add(cr); }
                 }
             }
             foreach (ProtoCrewMember to in HighLogic.CurrentGame.CrewRoster.Tourist)
@@ -1916,8 +1707,6 @@ namespace CommercialOfferings
 
         public void openGUIPrefCrew()
         {
-            closeGUIPrefCrew();
-
             preferredCrewList.Clear();
             string[] prefCrewNames = new string[0];
             getPreferredCrewNames(ref prefCrewNames);
@@ -1932,12 +1721,12 @@ namespace CommercialOfferings
                     if (name == to.name) { preferredCrewList.Add(to); }
                 }
             }
-            RenderingManager.AddToPostDrawQueue(347, new Callback(drawGUIPrefCrew));
+            renderGUIPrefCrew = true;
         }
 
         public void closeGUIPrefCrew()
         {
-            RenderingManager.RemoveFromPostDrawQueue(347, new Callback(drawGUIPrefCrew));
+            renderGUIPrefCrew = false;
         }
 
 
@@ -1997,29 +1786,6 @@ namespace CommercialOfferings
         /// </summary>
         /// <returns></returns>
         /// 
-        private void initStyle()
-        {
-            windowStyle = new GUIStyle(HighLogic.Skin.window);
-            windowStyle.stretchWidth = false;
-            windowStyle.stretchHeight = false;
-
-            labelStyle = new GUIStyle(HighLogic.Skin.label);
-            labelStyle.stretchWidth = false;
-            labelStyle.stretchHeight = false;
-
-            redlabelStyle = new GUIStyle(HighLogic.Skin.label);
-            redlabelStyle.stretchWidth = false;
-            redlabelStyle.stretchHeight = false;
-            redlabelStyle.normal.textColor = Color.red;
-
-            textFieldStyle = new GUIStyle(HighLogic.Skin.textField);
-            textFieldStyle.stretchWidth = false;
-            textFieldStyle.stretchHeight = false;
-
-            buttonStyle = new GUIStyle(HighLogic.Skin.button);
-            buttonStyle.stretchHeight = false;
-            buttonStyle.stretchWidth = false;
-        }
 
         private bool offeringAllowed(Offering Off)
         {
@@ -2145,7 +1911,7 @@ namespace CommercialOfferings
             {
                 if (time > -3600)
                 {
-                    strT = "anytime now";
+                    strT = "come back later";
                 }
                 else
                 {
@@ -2158,73 +1924,103 @@ namespace CommercialOfferings
 
         private void handleContracts(Vessel ves, bool arrive, bool depart)
         {
-            Contract[] activeContracts = Contracts.ContractSystem.Instance.GetCurrentActiveContracts<FinePrint.Contracts.TourismContract>();
-            foreach (Contract con in activeContracts)
+            //print("handling");
+
+            List<ProtoCrewMember> crew = new List<ProtoCrewMember>();
+            foreach (Part p in ves.parts)
             {
-
-                if (ReferenceEquals(con.GetType(), typeof(FinePrint.Contracts.TourismContract)))
+                if (p.CrewCapacity > 0 && p.protoModuleCrew.Count > 0)
                 {
-                    for (int i = 0; i < con.ParameterCount; i++)
+                    for (int c = 0; c < p.protoModuleCrew.Count; c++)
                     {
-                        ContractParameter conpara1 = con.GetParameter(i);
-                        if (ReferenceEquals(conpara1.GetType(), typeof(FinePrint.Contracts.Parameters.KerbalTourParameter)))
+                        crew.Add(p.protoModuleCrew[c]);
+                    }
+                }
+            }
+
+            if (crew.Count == 0) {return;}
+
+            foreach (ProtoCrewMember c in crew)
+            {
+                bool contractsHandled = false;
+                while (!contractsHandled)
+                {
+                    contractsHandled = handleContractsForCrew(ves, arrive, depart, c);
+                }
+             }
+        }
+
+
+        private bool handleContractsForCrew(Vessel ves, bool arrive, bool depart, ProtoCrewMember crew)
+        {
+            //print("handling crew");
+            foreach (Contract con in Contracts.ContractSystem.Instance.Contracts)
+            {
+                if (con.ContractState == Contract.State.Active)
+                {
+                    if (ReferenceEquals(con.GetType(), typeof(FinePrint.Contracts.TourismContract)))
+                    {
+                        for (int i = 0; i < con.ParameterCount; i++)
                         {
-                            FinePrint.Contracts.Parameters.KerbalTourParameter ktp = (FinePrint.Contracts.Parameters.KerbalTourParameter)conpara1;
-
-                            foreach (Part p in ves.parts)
+                            ContractParameter conpara1 = con.GetParameter(i);
+                            if (ReferenceEquals(conpara1.GetType(), typeof(FinePrint.Contracts.Parameters.KerbalTourParameter)) && conpara1.State != Contracts.ParameterState.Complete)
                             {
-                                if (p.CrewCapacity > 0 && p.protoModuleCrew.Count > 0)
-                                {
-                                    for (int c = 0; c < p.protoModuleCrew.Count; c++)
-                                    {
-                                        if (p.protoModuleCrew[c].name == ktp.kerbalName)
-                                        {
-                                            // complete destinations parameters on arrive for kerbals on vessel
-                                            if (arrive)
-                                            {
-                                                for (int u = 0; u < conpara1.ParameterCount; u++)
-                                                {
-                                                    ContractParameter conpara2 = conpara1.GetParameter(u);
-                                                    if (ReferenceEquals(conpara2.GetType(), typeof(FinePrint.Contracts.Parameters.KerbalDestinationParameter)))
-                                                    {
-                                                        FinePrint.Contracts.Parameters.KerbalDestinationParameter kds = (FinePrint.Contracts.Parameters.KerbalDestinationParameter)conpara2;
+                                FinePrint.Contracts.Parameters.KerbalTourParameter ktp = (FinePrint.Contracts.Parameters.KerbalTourParameter)conpara1;
 
-                                                        if (ves.mainBody.name == "Kerbin" || ves.mainBody.name == "Mun" || ves.mainBody.name == "Minmus")
-                                                        {
-                                                            if (kds.targetBody.name == "Kerbin" && (kds.targetType == FlightLog.EntryType.Orbit || kds.targetType == FlightLog.EntryType.Suborbit))
-                                                            {
-                                                                CompleteContractParameter(kds);
-                                                            }
-                                                        }
-                                                        if (ves.mainBody.name == "Mun" || ves.mainBody.name == "Minmus")
-                                                        {
-                                                            if (kds.targetBody.name == ves.mainBody.name && (kds.targetType == FlightLog.EntryType.Orbit || kds.targetType == FlightLog.EntryType.Flyby))
-                                                            {
-                                                                CompleteContractParameter(kds);
-                                                            }
-                                                        }
+                                if (crew.name == ktp.kerbalName)
+                                {
+                                    // complete destinations parameters on arrive for kerbals on vessel
+                                    if (arrive)
+                                    {
+                                        for (int u = 0; u < conpara1.ParameterCount; u++)
+                                        {
+                                            ContractParameter conpara2 = conpara1.GetParameter(u);
+                                            if (ReferenceEquals(conpara2.GetType(), typeof(FinePrint.Contracts.Parameters.KerbalDestinationParameter)) && conpara2.State != Contracts.ParameterState.Complete)
+                                            {
+                                                FinePrint.Contracts.Parameters.KerbalDestinationParameter kds = (FinePrint.Contracts.Parameters.KerbalDestinationParameter)conpara2;
+
+                                                if (AllowedBody(vessel.mainBody.name))
+                                                {
+                                                    if (HomeBody(kds.targetBody.name) && (kds.targetType == FlightLog.EntryType.Orbit || kds.targetType == FlightLog.EntryType.Suborbit))
+                                                    {
+                                                        //print("complete1");
+                                                        CompleteContractParameter(kds);
+                                                        return false;
+                                                    }
+                                                }
+                                                if (AllowedBody(vessel.mainBody.name) && !HomeBody(vessel.mainBody.name))
+                                                {
+                                                    if (kds.targetBody.name == ves.mainBody.name && (kds.targetType == FlightLog.EntryType.Orbit || kds.targetType == FlightLog.EntryType.Flyby))
+                                                    {
+                                                        //print("complete2");
+                                                        CompleteContractParameter(kds);
+                                                        return false;
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
 
-                                            // complete kerbaltour parameters on depart which have all their destinations completed
-                                            if (depart)
+                                    // complete kerbaltour parameters on depart which have all their destinations completed
+                                    if (depart)
+                                    {
+                                        if (conpara1.State != Contracts.ParameterState.Complete)
+                                        {
+                                            bool allDestinationsSucceeded = true;
+                                            for (int u = 0; u < conpara1.ParameterCount; u++)
                                             {
-                                                bool allDestinationsSucceeded = true;
-                                                for (int u = 0; u < conpara1.ParameterCount; u++)
+                                                ContractParameter conpara2 = conpara1.GetParameter(u);
+                                                if (conpara2.State != Contracts.ParameterState.Complete)
                                                 {
-                                                    ContractParameter conpara2 = conpara1.GetParameter(i);
-                                                    if (conpara2.State != Contracts.ParameterState.Complete)
-                                                    {
-                                                        allDestinationsSucceeded = false;
-                                                    }
+                                                    allDestinationsSucceeded = false;
                                                 }
-                                                if (depart && allDestinationsSucceeded)
-                                                {
-                                                    CompleteContractParameter(ktp);
-                                                    HighLogic.CurrentGame.CrewRoster.Remove(p.protoModuleCrew[c]);
-
-                                                }
+                                            }
+                                            if (depart && allDestinationsSucceeded)
+                                            {
+                                                //print("complete3");
+                                                CompleteContractParameter(ktp);
+                                                HighLogic.CurrentGame.CrewRoster.Remove(crew);
+                                                return false;
                                             }
                                         }
                                     }
@@ -2234,6 +2030,7 @@ namespace CommercialOfferings
                     }
                 }
             }
+            return true;
         }
 
         /// <summary>
@@ -2242,16 +2039,10 @@ namespace CommercialOfferings
         [KSPEvent(name = "register", isDefault = false, guiActive = true, guiName = "Register Docking Port")]
         public void register()
         {
-            initStyle();
-            RenderingManager.AddToPostDrawQueue(4116, OnDrawRegister);
+            openGUIRegister();
         }
 
-        private void OnDrawRegister()
-        {
-            windowPosRegister = GUI.Window(157, windowPosRegister, WindowRegister, "Register", windowStyle);
-        }
-
-        private void WindowRegister(int windowID)
+        private void WindowGUIRegister(int windowID)
         {
             GUILayout.BeginHorizontal();
             GUILayout.Label("Docking Port Code");
@@ -2263,19 +2054,29 @@ namespace CommercialOfferings
                 if (StrPortCode != "")
                 {
                     PortCode = StrPortCode;
-                    closeWindowRegister();
+                    closeGUIRegister();
                 }
             }
             if (GUILayout.Button("Cancel", GUILayout.Width(60)))
             {
-                closeWindowRegister();
+                closeGUIRegister();
             }
             GUILayout.EndHorizontal();
         }
 
-        public void closeWindowRegister()
+        private void drawGUIRegister()
         {
-            RenderingManager.RemoveFromPostDrawQueue(4116, OnDrawRegister);
+            windowPosGUIRegister = GUI.Window(157, windowPosGUIRegister, WindowGUIRegister, "Register", windowStyle);
+        }
+
+        public void openGUIRegister()
+        {
+            renderGUIRegister = true;
+        }
+
+        public void closeGUIRegister()
+        {
+            renderGUIRegister = false;
         }
     }
 }
