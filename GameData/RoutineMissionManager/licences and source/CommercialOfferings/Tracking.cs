@@ -26,200 +26,381 @@ OF SUCH DAMAGE.*/
 
 //Namespace Declaration 
 using System;
-using System.IO;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using UnityEngine;
-using KSP.UI.Screens;
-using Contracts;
+using CommercialOfferings.MissionData;
 
 namespace CommercialOfferings
 {
-    public partial class RMMModule : PartModule
+    public class Tracking
     {
+        private RMMModule _partModule;
+        private Mission _mission;
+
+        private double landedTime = 0.0;
+        private double landedLatitude = 0.0;
+        private double landedLongitude = 0.0;
+        private int landedTimeMessage = 0;
+
         //GUI Tracking
         private bool renderGUITracking = false;
         private static Rect windowPosGUITracking = new Rect(200, 200, 200, 30);
-
-        //tracking variables
-        [KSPField(isPersistant = true, guiActive = false)]
-        public bool trackingActive = false;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public bool trackingPrimary = false;
-
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackID = "";
-
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackPartCount = 0.0f;
-
-        [KSPField(isPersistant = true, guiActive = false)]
-        public bool returnMission = false;
-
-        [KSPField(isPersistant = true, guiActive = false)]
-        public bool returnMissionDeparted = false;
-
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackFolderName = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackName = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackCompanyName = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackVehicleName = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackLaunchSystemName = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackPrice = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackVehicleReturnFee = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackMissionStartTime = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackMissionTime = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackBody = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackMaxOrbitAltitude = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackDescription = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackMinimumCrew = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackMaximumCrew = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public bool trackReturnEnabled = false;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public bool trackSafeReturn = false;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public string trackReturnResources = "";
-        [KSPField(isPersistant = true, guiActive = false)]
-        public double trackReturnCargoMass = 0.0;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackPort = 0.0f;
-        [KSPField(isPersistant = true, guiActive = false)]
-        public float trackDockingDistance = 0.15f;
-
-        private double landedTime = 0.0;
-        private int landedTimeMessage = 0;
-
         //GUI variables
         private string trackStrName = "";
         private string trackStrVehicleName = "";
-        private string trackStrLaunchSystemName = "";
 
-
-        private bool handleTracking()
+        public Tracking(RMMModule partModule)
         {
-            if (trackingActive && trackingPrimary)
+            _partModule = partModule;
+            if (_mission == null && !String.IsNullOrEmpty(trackMissionId))
             {
-                nextLogicTime = Planetarium.GetUniversalTime() + 1;
+                _mission = Mission.GetMissionById(trackMissionId);
+            }
 
-                if (!returnMission)
-                {
-                    updatePartCount();
-                    updateMinCrewCount();
-                    updateMaxCrewCount();
-                }
+        }
 
-                updateTrackingVars(vessel);
+        #region Saved Properties
 
-                //check for succesfull docking
+        private string trackMissionId
+        {
+            get { return _partModule.trackMissionId; }
+            set { _partModule.trackMissionId = value; }
+        }
 
-                if (checkDocked() && !returnMission && vessel.situation == Vessel.Situations.ORBITING && AllowedBody())
-                {
-                    if (foreignDockingPorts(vessel))
+        private bool trackingActive
+        {
+            get { return _partModule.trackingActive; }
+            set { _partModule.trackingActive = value; }
+        }
+
+        private bool trackingPrimary
+        {
+            get { return _partModule.trackingPrimary; }
+            set { _partModule.trackingPrimary = value; }
+        }
+
+        private string trackingStatus
+        {
+            get { return _partModule.trackingStatus; }
+            set { _partModule.trackingStatus = value; }
+        }
+
+
+
+        private float trackPartCount
+        {
+            get { return _partModule.trackPartCount; }
+            set { _partModule.trackPartCount = value; }
+        }
+
+        private bool returnMission
+        {
+            get { return _partModule.returnMission; }
+            set { _partModule.returnMission = value; }
+        }
+
+        private bool returnMissionDeparted
+        {
+            get { return _partModule.returnMissionDeparted; }
+            set { _partModule.returnMissionDeparted = value; }
+        }
+
+        private string trackFolderName
+        {
+            get { return _partModule.trackFolderName; }
+            set { _partModule.trackFolderName = value; }
+        }
+
+        private float trackMissionTime
+        {
+            get { return _partModule.trackMissionTime; }
+            set { _partModule.trackMissionTime = value; }
+        }
+
+        private string trackBody
+        {
+            get { return _partModule.trackBody; }
+            set { _partModule.trackBody = value; }
+        }
+
+        private float trackMaxOrbitAltitude
+        {
+            get { return _partModule.trackMaxOrbitAltitude; }
+            set { _partModule.trackMaxOrbitAltitude = value; }
+        }
+
+        private string trackDescription
+        {
+            get { return _partModule.trackDescription; }
+            set { _partModule.trackDescription = value; }
+        }
+
+        private float trackCrew
+        {
+            get { return _partModule.trackCrew; }
+            set { _partModule.trackCrew = value; }
+        }
+
+        private float trackCrewCapacity
+        {
+            get { return _partModule.trackCrewCapacity; }
+            set { _partModule.trackCrewCapacity = value; }
+        }
+
+        private bool trackReturnEnabled
+        {
+            get { return _partModule.trackReturnEnabled; }
+            set { _partModule.trackReturnEnabled = value; }
+        }
+
+        private bool trackSafeReturn
+        {
+            get { return _partModule.trackSafeReturn; }
+            set { _partModule.trackSafeReturn = value; }
+        }
+
+        private string trackReturnResources
+        {
+            get { return _partModule.trackReturnResources; }
+            set { _partModule.trackReturnResources = value; }
+        }
+
+        private double trackReturnCargoMass
+        {
+            get { return _partModule.trackReturnCargoMass; }
+            set { _partModule.trackReturnCargoMass = value; }
+        }
+
+        private uint trackPort
+        {
+            get { return _partModule.trackPort; }
+            set { _partModule.trackPort = value; }
+        }
+
+        private float trackDockingDistance
+        {
+            get { return _partModule.trackDockingDistance; }
+            set { _partModule.trackDockingDistance = value; }
+        }
+
+        public float trackMinimumReturnCrew
+        {
+            get { return _partModule.trackMinimumReturnCrew; }
+            set { _partModule.trackMinimumReturnCrew = value; }
+        }
+
+        //public float trackCrewBalance
+        //{
+        //    get { return _partModule.trackCrewBalance; }
+        //    set { _partModule.trackCrewBalance = value; }
+        //}
+        //
+        //public float trackReturnCrewBalance
+        //{
+        //    get { return _partModule.trackReturnCrewBalance; }
+        //    set { _partModule.trackReturnCrewBalance = value; }
+        //}
+
+        #endregion Saved Properties
+
+        #region Derived Properties
+
+        private Vessel vessel
+        {
+            get { return _partModule.vessel; }
+        }
+
+        private Part part
+        {
+            get { return _partModule.part; }
+        }
+
+        #endregion Derived Properties
+
+        #region Public Properties
+
+        public string MissionName
+        {
+            get { return _mission?.Info?.Name ?? ""; }
+        }
+
+        public string VesselName
+        {
+            get { return vessel?.vesselName ?? ""; }
+        }
+
+        public string Status
+        {
+            get { return trackingStatus; }
+        }
+
+        #endregion Public Properties
+
+        public void DrawGUI()
+        {
+            //Tracking GUI rendering
+            if (renderGUITracking)
+            {
+                drawGUITracking();
+            }
+        }
+
+        public void handleTracking()
+        {
+            if (trackingPrimary)
+            {
+                handleTrackingPrimary();
+            }
+            else if (trackingActive)
+            {
+                ensurePrimaryExists();
+            }
+        }
+
+        public void handleTrackingPrimary()
+        {
+            switch (trackingStatus)
+            {
+                case "Launch":
+                    if (vessel.situation == Vessel.Situations.FLYING || 
+                        vessel.situation == Vessel.Situations.SUB_ORBITAL ||
+                        vessel.situation == Vessel.Situations.ORBITING)
                     {
-                        trackArrival();
-                        return (false);
+                        trackLaunch();
                     }
-                }
-                else if (!returnMission && !checkDocking() && vessel.situation == Vessel.Situations.ORBITING && AllowedBody())
-                {
-                    //determineDockingPort();
-                    takeVesselSnapShot();
-                    //return (false);
-                }
-
-                if (returnMission)
-                {
-                    if (!checkDocked() && !returnMissionDeparted)
+                    break;
+                case "Departure":
+                    foreach (Part p in vessel.parts)
                     {
-                        determineReturnResources();
-                        if (trackPartCount != countVesselParts(vessel)) { trackAbort(); }
-                        returnMissionDeparted = true;
-                    }
-                }
-
-                if ((foreignDockingPorts(vessel) || countVesselParts(vessel) > trackPartCount) && (!returnMission ||(returnMission && returnMissionDeparted)))
-                {
-                    trackAbort();
-                    return (false);
-                }
-
-                if (returnMission)
-                {
-                    //check for succesfull return
-                    if (!trackReturnEnabled && HomeBody() && vessel.situation == Vessel.Situations.SUB_ORBITAL)
-                    {
-                        trackReturn();
-                    }
-
-                    //check for succesfull landing
-                    if (!trackSafeReturn && HomeBody() && (vessel.situation == Vessel.Situations.LANDED || vessel.situation == Vessel.Situations.SPLASHED))
-                    {
-                        if (landedTime == 0.0)
+                        if (p.flightID == trackPort && !RmmUtil.IsDocked(vessel, p))
                         {
-                            landedTime = Planetarium.GetUniversalTime();
-                            landedTimeMessage = 0;
+                            trackDeparture();
                         }
-                        else if (Planetarium.GetUniversalTime() - landedTime > 0.0 && Planetarium.GetUniversalTime() - landedTime < 10)
+                    }
+                    break;
+                case "Underway":
+                    updatePartCount();
+                    updateCrewCount();
+                    updateMaxCrewCount();
+
+                    // check for arrival
+                    if (_mission.Info.Type == 10)
+                    {
+                        if (vessel.situation == Vessel.Situations.ORBITING && RmmUtil.AllowedBody(vessel.mainBody.name))
                         {
-                            if (Planetarium.GetUniversalTime() - landedTime > landedTimeMessage + 1.0)
+                            foreach (Part p in vessel.parts)
                             {
-                                landedTimeMessage = landedTimeMessage + 1;
-                                ScreenMessages.PostScreenMessage("landing confirmation " + (10-landedTimeMessage).ToString() + " seconds", 1, ScreenMessageStyle.UPPER_CENTER);
+                                ModuleDockingNode dockingModule = p.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
+                                if (dockingModule != null)
+                                {
+                                    Part dockedPart = RmmUtil.GetDockedPart(vessel, p);
+                                    if (dockedPart != null && !Mission.PartIsMissionPart(dockedPart, _mission.Launch.Parts))
+                                    {
+                                        trackArrival(p);
+                                        return;
+                                    }
+                                }
+
                             }
                         }
-                        else if (Planetarium.GetUniversalTime() - landedTime > 10)
+                    }
+
+                    // make snapshot of vessel
+                    if (_mission.Info.Type == 10)
+                    {
+                        if (vessel.situation == Vessel.Situations.ORBITING && RmmUtil.AllowedBody(vessel.mainBody.name))
                         {
-                            trackLanding();
+                            // don't make snapshot when the vessel is in the process of docking. It leaves the docking port in the wrong state.
+                            bool isAnyPartDocking = false;
+                            foreach (Part p in vessel.parts)
+                            {
+                                ModuleDockingNode dockingModule = p.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
+                                if (dockingModule != null && RmmUtil.IsDocking(p))
+                                {
+                                    isAnyPartDocking = true;
+                                }
+                            }
+
+                            if (!isAnyPartDocking)
+                            {
+                                TakeVesselSnapShot();
+                            }
+                        }
+                    }
+
+                    // check for landing
+                    if (_mission.Info.Type == 10 || _mission.Info.Type == 20)
+                    {
+                        if ((vessel.situation == Vessel.Situations.LANDED || vessel.situation == Vessel.Situations.SPLASHED) && RmmUtil.HomeBody(vessel.mainBody.name))
+                        {
+                            if (landedTime == 0.0)
+                            {
+                                landedTime = Planetarium.GetUniversalTime();
+                                landedLatitude = vessel.latitude;
+                                landedLongitude = vessel.longitude;
+                                landedTimeMessage = 0;
+                            }
                         }
 
-
+                        if (landedTime > 0.0)
+                        {
+                            // Check still landed
+                            if (!(vessel.situation == Vessel.Situations.LANDED || vessel.situation == Vessel.Situations.SPLASHED) || !RmmUtil.HomeBody(vessel.mainBody.name))
+                            {
+                                landedTime = 0.0;
+                                landedLatitude = 0.0;
+                                landedLongitude = 0.0;
+                                landedTimeMessage = 0;
+                            }
+                            // Check not moved
+                            else if (RmmUtil.GetDistanceBetweenPoints(landedLatitude, landedLongitude, vessel.latitude, vessel.longitude, vessel.mainBody.Radius) > 2)
+                            {
+                                landedTime = 0.0;
+                                landedLatitude = 0.0;
+                                landedLongitude = 0.0;
+                                landedTimeMessage = 0;
+                            }
+                            // Countdown
+                            else if (Planetarium.GetUniversalTime() - landedTime > 0.0 && Planetarium.GetUniversalTime() - landedTime < 10)
+                            {
+                                if (Planetarium.GetUniversalTime() - landedTime > landedTimeMessage + 1.0)
+                                {
+                                    landedTimeMessage = landedTimeMessage + 1;
+                                    ScreenMessages.PostScreenMessage("landing confirmation " + (10 - landedTimeMessage).ToString() + " seconds", 1, ScreenMessageStyle.UPPER_CENTER);
+                                }
+                            }
+                            // Landed
+                            else if (Planetarium.GetUniversalTime() - landedTime > 10)
+                            {
+                                TrackLanding();
+                                return;
+                            }
+                        }
                     }
-                    else
+
+                    if (RmmUtil.CountVesselParts(vessel) > trackPartCount)
                     {
-                        landedTime = 0.0;
+                        trackAbort("vessel has joined with non mission vessel");
                     }
-                }
-                return false;
-            }
-            if (trackingPrimary && returnMission && !trackingActive)
-            {
-                nextLogicTime = Planetarium.GetUniversalTime() + 1;
-                if (!checkDocked())
-                {
-                    trackAbort();
-                }
-                return false;
-            }
 
-            if (trackingActive && !trackingPrimary && returnMission && returnMissionDeparted)
-            {
-                nextLogicTime = Planetarium.GetUniversalTime() + 1;
+                    if (RmmUtil.AstronautCrewCount(vessel) > trackCrew)
+                    {
+                        trackAbort("crew has been added to vessel");
+                    }
 
-                ensurePrimaryExists();
+                    updateTrackingVars(vessel);
 
-                return false;
+                    break;
             }
-            return true;
         }
+
 
         private void updatePartCount()
         {
-            int currentCount = countVesselParts(vessel);
+            int currentCount = RmmUtil.CountVesselParts(vessel);
 
             if (currentCount < trackPartCount)
             {
@@ -227,32 +408,42 @@ namespace CommercialOfferings
             }
         }
 
-        private void updateMinCrewCount()
+        private void updateCrewCount()
         {
-            int currentCount = astronautCrewCount(vessel);
+            int currentCount = RmmUtil.AstronautCrewCount(vessel);
 
-            if (currentCount < trackMinimumCrew)
+            if (currentCount < trackCrew)
             {
-                trackMinimumCrew = currentCount;
+                trackCrew = currentCount;
             }
         }
 
         private void updateMaxCrewCount()
         {
-            int currentCount = crewCapacityCount(vessel);
+            int currentCount = RmmUtil.CrewCapacityCount(vessel);
 
-            if (currentCount < trackMaximumCrew)
+            if (currentCount < trackCrewCapacity)
             {
-                trackMaximumCrew = currentCount;
+                trackCrewCapacity = currentCount;
             }
         }
+
+        //private void updateReturnCrewBalanceCount()
+        //{
+        //    int currentCount = RmmUtil.AstronautCrewCount(vessel);
+        //
+        //    if (currentCount < trackReturnCrewBalance)
+        //    {
+        //        trackReturnCrewBalance = currentCount;
+        //    }
+        //}
 
         private void determineReturnResources()
         {
             string content = "";
 
             string[] arrResource = new string[0];
-            determineProppellantArray(ref arrResource);
+            //RmmUtil.DetermineProppellantArray(vessel, ref arrResource);
 
             foreach (String res in arrResource)
             {
@@ -291,7 +482,7 @@ namespace CommercialOfferings
             double cargoMass = 0.0;
 
             string[] cargoArray = new string[0];
-            getCargoArray(trackReturnResources, ref cargoArray);
+            //RmmUtil.GetCargoArray(vessel, trackReturnResources, ref cargoArray);
 
             foreach (Part p in vessel.parts)
             {
@@ -299,50 +490,27 @@ namespace CommercialOfferings
                 {
                     if (cargoArray.Contains(r.info.name))
                     {
-                        cargoMass = cargoMass + mass(r.info.name, r.amount);
+                        cargoMass = cargoMass + RmmUtil.Mass(r.info.name, r.amount);
                     }
                 }
             }
             return (cargoMass);
         }
 
-        private void takeVesselSnapShot()
+        private void TakeVesselSnapShot()
         {
             ConfigNode savenode = new ConfigNode();
             vessel.BackupVessel();
             vessel.protoVessel.Save(savenode);
-            savenode.Save(GamePath + CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName + Path.DirectorySeparatorChar + "vesselfiletrack");
+            savenode.Save(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + _mission.MissionId + Path.DirectorySeparatorChar + "vesselfiletrack" + part.flightID);
             vessel.BackupVessel();
         }
 
-        private void cleanVesselSnapShot()
+        private void StoreVesselSnapShot(string prefix)
         {
-            string[] line = System.IO.File.ReadAllLines(GamePath + CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName + Path.DirectorySeparatorChar + "vesselfiletrack");
+            string[] line = System.IO.File.ReadAllLines(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + _mission.MissionId + Path.DirectorySeparatorChar + "vesselfiletrack" + part.flightID);
 
-//            bool inpart = false;
-//            //bool inmodule = false;
-//            int bracket = 0;
-//            
-//            //clean crew 
-//            for (int i = 0; i < line.Length; i++)
-//            {
-//                if (line[i].Trim().Length >= 4 && line[i].Trim().Substring(0, 4) == "PART" && bracket == 0) { inpart = true; }
-//                //if (line[i].Trim().Length >= 6 && line[i].Trim().Substring(0, 6) == "MODULE" && bracket == 1) { inmodule = true; }
-//
-//                if (line[i].Trim().Length >= 1 && line[i].Trim().Substring(0, 1) == "{") { bracket++; }
-//                
-//                if (line[i].Trim().Length >= 1 && line[i].Trim().Substring(0, 1) == "}") 
-//                {
-//                    if (bracket == 1) { inpart = false; }
-//                    bracket--;
-//                }
-//
-//                if (inpart == true && bracket == 1 && line[i].Trim().Length >= 6 && line[i].Trim().Substring(0, 6) == "crew =") { line[i] = ""; }
-//
-//                //if (inpart == true && inmodule == true && bracket == 2 && line[i].Trim().Length >= 9 && line[i].Trim().Substring(0, 9) == "trackID =") { line[i] = "trackID = 0"; }
-//            }
-
-            System.IO.File.WriteAllLines(GamePath + CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName + Path.DirectorySeparatorChar + "vesselfile", line);
+            System.IO.File.WriteAllLines(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + _mission.MissionId + Path.DirectorySeparatorChar + prefix + "vesselfile", line);
         }
 
         private void updateTrackingVars(Vessel ves)
@@ -351,35 +519,31 @@ namespace CommercialOfferings
             {
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode" && part.flightID != p.flightID)
+                    if (pm.ClassName == "RMMModule" && part.flightID != p.flightID)
                     {
                         RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackID == trackID)
+                        if (ComOffMod.trackMissionId == trackMissionId)
                         {
                             ComOffMod.trackingActive = trackingActive;
+                            ComOffMod.trackingStatus = trackingStatus;
                             ComOffMod.trackPartCount = trackPartCount;
                             ComOffMod.returnMission = returnMission;
                             ComOffMod.returnMissionDeparted = returnMissionDeparted;
                             ComOffMod.trackFolderName = trackFolderName;
-                            ComOffMod.trackName = trackName;
-                            ComOffMod.trackCompanyName = trackCompanyName;
-                            ComOffMod.trackVehicleName = trackVehicleName;
-                            ComOffMod.trackLaunchSystemName = trackLaunchSystemName;
-                            ComOffMod.trackPrice = trackPrice;
-                            ComOffMod.trackVehicleReturnFee = trackVehicleReturnFee;
-                            ComOffMod.trackMissionStartTime = trackMissionStartTime;
                             ComOffMod.trackMissionTime = trackMissionTime;
                             ComOffMod.trackBody = trackBody;
                             ComOffMod.trackMaxOrbitAltitude = trackMaxOrbitAltitude;
                             ComOffMod.trackDescription = trackDescription;
-                            ComOffMod.trackMinimumCrew = trackMinimumCrew;
-                            ComOffMod.trackMaximumCrew = trackMaximumCrew;
+                            ComOffMod.trackCrew = trackCrew;
+                            ComOffMod.trackCrewCapacity = trackCrewCapacity;
                             ComOffMod.trackReturnEnabled = trackReturnEnabled;
                             ComOffMod.trackSafeReturn = trackSafeReturn;
                             ComOffMod.trackReturnResources = trackReturnResources;
                             ComOffMod.trackReturnCargoMass = trackReturnCargoMass;
-                            ComOffMod.trackPort = trackPort;
                             ComOffMod.trackDockingDistance = trackDockingDistance;
+                            ComOffMod.trackMinimumReturnCrew = trackMinimumReturnCrew;
+                            //ComOffMod.trackCrewBalance = trackCrewBalance;
+                            //ComOffMod.trackReturnCrewBalance = trackReturnCrewBalance;
                         }
                     }
                 }
@@ -392,12 +556,12 @@ namespace CommercialOfferings
             {
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode" && part.flightID != p.flightID)
+                    if (pm.ClassName == "RMMModule" && part.flightID != p.flightID)
                     {
                         RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackID == trackID)
+                        if (ComOffMod.trackMissionId == trackMissionId)
                         {
-                            ComOffMod.nextLogicTime = nextLogicTime;
+                            ComOffMod.nextLogicTime = _partModule.nextLogicTime;
                         }
                     }
                 }
@@ -410,10 +574,10 @@ namespace CommercialOfferings
             {
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
+                    if (pm.ClassName == "RMMModule")
                     {
                         RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackID == trackID && ComOffMod.trackingPrimary)
+                        if (ComOffMod.trackMissionId == trackMissionId && ComOffMod.trackingPrimary)
                         {
                             return;
                         }
@@ -425,121 +589,246 @@ namespace CommercialOfferings
             {
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
+                    if (pm.ClassName == "RMMModule")
                     {
                         RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackID == trackID)
+                        if (ComOffMod.trackMissionId == trackMissionId)
                         {
                             if (p.flightID > part.flightID) { return; }
                         }
                     }
                 }
             }
-
             trackingPrimary = true;
         }
 
-        public bool foreignDockingPorts(Vessel ves)
+        public void StartLaunchMission(string name)
         {
-            foreach (Part p in ves.parts)
+            trackStrName = name;
+            _mission = Mission.NewMission(RmmUtil.Rand.Next(1000000, 9999999).ToString(), 10, trackStrName);
+            trackMissionId = _mission.MissionId;
+
+            trackingActive = false;
+            SetThisPortPrimary();
+            trackingStatus = "Launch";
+
+            _partModule.nextLogicTime = Planetarium.GetUniversalTime();
+        }
+
+        public void StartDepartMission(string name, Part dockingPort)
+        {
+            trackStrName = name;
+            _mission = Mission.NewMission(RmmUtil.Rand.Next(1000000, 9999999).ToString(), 20, trackStrName);
+            trackMissionId = _mission.MissionId;
+
+            trackPort = dockingPort.flightID;
+
+            trackingActive = false;
+            SetThisPortPrimary();
+            trackingStatus = "Departure";
+
+            _partModule.nextLogicTime = Planetarium.GetUniversalTime();
+        }
+
+        private void trackLaunch()
+        {
+            MissionLaunch launch = new MissionLaunch
             {
-                foreach (PartModule pm in p.Modules)
+                Time = (float)Planetarium.GetUniversalTime(),
+                Body = vessel.mainBody.name,
+                VesselName = vessel.name,
+                Funds = RmmUtil.CalculateVesselPrice(vessel),
+                Crew = RmmUtil.AstronautCrewCount(vessel),
+                Parts = MissionPart.GetMissionPartList(vessel),
+            };
+            _mission.TrackLaunch(launch);
+            trackingActive = true;
+            trackingPrimary = true;
+            trackingStatus = "Underway";
+
+            //-----------------------
+            trackPartCount = RmmUtil.CountVesselParts(vessel);
+            trackCrew = RmmUtil.AstronautCrewCount(vessel);
+            trackCrewCapacity = RmmUtil.CrewCapacityCount(vessel);
+
+            ScreenMessages.PostScreenMessage("mission tracking-LAUNCH", 4, ScreenMessageStyle.UPPER_CENTER);
+            setOtherModules();
+            updateTrackingVars(vessel);
+            updateNextLogicTime(vessel);
+        }
+
+        private void trackDeparture()
+        {
+            Part dockedPart = null;
+            foreach (Part p in vessel.parts)
+            {
+                if (p.flightID == trackPort)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
-                    {
-                        RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackID != trackID)
-                        {
-                            return true;
-                        }
-                    }
+                    dockedPart = p;
+                    break;
                 }
             }
-            return false;
-        }
 
-        private void trackArrival()
-        {
-            trackMissionTime = (float)((Planetarium.GetUniversalTime() - trackMissionStartTime) + 21600);
-
-            trackBody = vessel.mainBody.name;
-
-            if (HomeBody(vessel.mainBody.name))
+            MissionDeparture departure = new MissionDeparture
             {
-                trackMaxOrbitAltitude = (float)(vesselOrbitAltitude() * 1.2);
-            }
-            else
-            {
-                trackMaxOrbitAltitude = 0;
-            }
+                Time = (float)Planetarium.GetUniversalTime(),
+                Body = vessel.mainBody.name,
+                Orbit = MissionOrbit.GetMissionOrbit(vessel.orbit),
+                flightIDDockPart = trackPort,
+                VesselName = vessel.name,
+                Crew = RmmUtil.AstronautCrewCount(vessel),
+                Parts = MissionPart.GetMissionPartList(vessel),
+                Resources = MissionResource.GetMissionResourceList(vessel),
+                Proppellants = RmmUtil.DetermineProppellantArray(vessel),
+                Structure = Structure.GetDockedStructure(vessel, dockedPart)
+            };
 
-            cleanVesselSnapShot();
+            _mission.TrackDeparture(departure);
+            trackingActive = true;
+            trackingPrimary = true;
+            trackingStatus = "Underway";
 
-            PortCode = "";
-            trackingActive = false;
-            returnMission = true;
+            //-----------------------
+            trackPartCount = RmmUtil.CountVesselParts(vessel);
+            trackCrew = RmmUtil.AstronautCrewCount(vessel);
+            trackCrewCapacity = RmmUtil.CrewCapacityCount(vessel);
 
-            createMissionFile();
-            ScreenMessages.PostScreenMessage("mission tracking-ARRIVAL", 4, ScreenMessageStyle.UPPER_CENTER);
+            ScreenMessages.PostScreenMessage("mission tracking-DEPARTURE", 4, ScreenMessageStyle.UPPER_CENTER);
+            setOtherModules();
             updateTrackingVars(vessel);
+            updateNextLogicTime(vessel);
         }
 
-        private void trackReturn()
+        private void trackArrival(Part dockedPort)
+        {
+            MissionArrival arrival = new MissionArrival
+            {
+                Time = Planetarium.GetUniversalTime(),
+                Body = vessel.mainBody.name,
+                Orbit = MissionOrbit.GetMissionOrbit(vessel.orbit),
+                flightIDDockPart = dockedPort.flightID,
+                Crew = (int)trackCrew,
+                CrewCapacity = (int)trackCrewCapacity,
+                Parts = MissionPart.GetMissionPartList(RmmUtil.GetDockedParts(vessel, dockedPort))
+            };
+
+            _mission.TrackArrival(arrival);
+
+            trackingActive = false;
+            trackingPrimary = false;
+            trackingStatus = "Arrived";
+
+            //-----------------------
+            StoreVesselSnapShot("arrival");
+
+            _partModule.PortCode = "";
+
+
+            ScreenMessages.PostScreenMessage("mission tracking-ARRIVAL", 4, ScreenMessageStyle.UPPER_CENTER);
+            _partModule.nextLogicTime = 0;
+            updateTrackingVars(vessel);
+            updateNextLogicTime(vessel);
+        }
+
+        private void TrackLanding()
+        {
+            MissionLanding landing = new MissionLanding
+            {
+                Time = Planetarium.GetUniversalTime(),
+                Body = vessel.mainBody.name,
+                Coordinates = MissionCoordinates.GetMissionCoordinates(vessel.latitude, vessel.longitude),
+                Funds = RmmUtil.CalculateVesselPrice(vessel),
+                Crew = (int)trackCrew,
+                CrewCapacity = (int)trackCrewCapacity,
+                Parts = MissionPart.GetMissionPartList(vessel),
+                Resources = MissionResource.GetMissionResourceList(vessel),
+            };
+
+            _mission.TrackLanding(landing);
+
+            trackingPrimary = false;
+            trackingActive = false;
+            trackingStatus = "Landed";
+
+            ScreenMessages.PostScreenMessage("mission tracking-LANDING", 4, ScreenMessageStyle.UPPER_CENTER);
+            _partModule.nextLogicTime = 0;
+            updateTrackingVars(vessel);
+            updateNextLogicTime(vessel);
+        }
+
+        private void TrackReturn()
         {
             trackReturnEnabled = true;
 
-            createMissionFile();
+            //createMissionFile();
             ScreenMessages.PostScreenMessage("mission tracking-REENTRY", 4, ScreenMessageStyle.UPPER_CENTER);
             updateTrackingVars(vessel);
         }
 
-        private void trackLanding()
+        private void TrackSafeReturn()
         {
-            if (trackMinimumCrew <= astronautCrewCount(vessel) || trackMaximumCrew <= crewCapacityCount(vessel) )
-            {
-                determineReturnCargoMass();
-                trackSafeReturn = true;
-                trackVehicleReturnFee = (CalculateVesselPrice(false) * 0.9f);
-            }
+            determineReturnCargoMass();
+            trackSafeReturn = true;
 
-            createMissionFile();
+            //createMissionFile();
             trackingActive = false;
-            ScreenMessages.PostScreenMessage("mission tracking-LANDING", 4, ScreenMessageStyle.UPPER_CENTER);
+            ScreenMessages.PostScreenMessage("mission tracking-RETURN", 4, ScreenMessageStyle.UPPER_CENTER);
             updateTrackingVars(vessel);
         }
 
-        private void trackAbort()
+        private void trackAbort(string message = null)
         {
             trackingActive = false;
             trackingPrimary = false;
             returnMission = false;
             ScreenMessages.PostScreenMessage("mission tracking ended", 4, ScreenMessageStyle.UPPER_CENTER);
+            if (!String.IsNullOrEmpty(message))
+            {
+                ScreenMessages.PostScreenMessage(message, 4, ScreenMessageStyle.UPPER_CENTER);
+            }
+            _partModule.nextLogicTime = 0;
             updateTrackingVars(vessel);
+            updateNextLogicTime(vessel);
         }
 
-        private void createMissionFile()
+        //private void createMissionFile()
+        //{
+        //    string[] data = new string[16];
+        //
+        //    data[0] = "Name=" + trackName;
+        //    data[1] = "CompanyName=" + trackCompanyName;
+        //    data[2] = "VehicleName=" + trackVehicleName;
+        //    data[3] = "LaunchSystemName=" + trackLaunchSystemName;
+        //    data[4] = "Price=" + trackPrice.ToString();
+        //    data[6] = "Time=" + trackMissionTime.ToString();
+        //    data[7] = "Body=" + trackBody;
+        //    data[8] = "MaxOrbitAltitude=" + trackMaxOrbitAltitude.ToString();
+        //    data[9] = "MinimumCrew=" + trackMinimumCrew.ToString();
+        //    data[10] = "MaximumCrew=" + trackMaximumCrew.ToString();
+        //    data[11] = "ReturnEnabled=" + trackReturnEnabled.ToString();
+        //    data[12] = "SafeReturn=" + trackSafeReturn.ToString();
+        //    data[13] = "ReturnResources=" + trackReturnResources;
+        //    data[14] = "ReturnCargoMass=" + trackReturnCargoMass.ToString();
+        //    data[15] = "DockingDistance=0.15";
+        //    data[16] = "MinimumReturnCrew=" + trackMinimumReturnCrew.ToString();
+        //    data[17] = "CrewBalance=" + trackCrewBalance.ToString();
+        //
+        //    System.IO.File.WriteAllLines(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName + Path.DirectorySeparatorChar + "mission.txt", data);
+        //
+        //}
+
+        private void createLandingFile()
         {
-            string[] data = new string[16];
+            string[] data = new string[6];
 
-            data[0] = "Name=" + trackName;
-            data[1] = "CompanyName=" + trackCompanyName;
-            data[2] = "VehicleName=" + trackVehicleName;
-            data[3] = "LaunchSystemName=" + trackLaunchSystemName;
-            data[4] = "Price=" + trackPrice.ToString();
-            data[5] = "VehicleReturnFee=" + trackVehicleReturnFee.ToString();
-            data[6] = "Time=" + trackMissionTime.ToString();
-            data[7] = "Body=" + trackBody;
-            data[8] = "MaxOrbitAltitude=" + trackMaxOrbitAltitude.ToString();
-            data[9] = "MinimumCrew=" + trackMinimumCrew.ToString();
-            data[10] = "MaximumCrew=" + trackMaximumCrew.ToString();
-            data[11] = "ReturnEnabled=" + trackReturnEnabled.ToString();
-            data[12] = "SafeReturn=" + trackSafeReturn.ToString();
-            data[13] = "ReturnResources=" + trackReturnResources;
-            data[14] = "ReturnCargoMass=" + trackReturnCargoMass.ToString();
-            data[15] = "DockingDistance=0.15";
+            data[0] = "ReturnLanding=" + returnMission.ToString();
+            data[1] = "FlightID=" + part.flightID;
+            data[2] = "LandingPrice=" + CalculateVesselPrice(false);
+            data[3] = "LandingCrew=" + RmmUtil.AstronautCrewCount(vessel);
+            data[4] = "MaximumLandingCrew=" + RmmUtil.AstronautCrewCount(vessel);
+            data[5] = "ReturnCargoMass=" + trackReturnCargoMass.ToString();
 
-            System.IO.File.WriteAllLines(GamePath + CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName + Path.DirectorySeparatorChar + "info.txt", data);
-
+            System.IO.File.WriteAllLines(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName + Path.DirectorySeparatorChar + "landing.txt", data);
         }
 
 
@@ -547,18 +836,12 @@ namespace CommercialOfferings
         {
             string[] data = new string[17];
 
-            data[0] = "Name=" + trackName;
-            data[1] = "CompanyName=" + trackCompanyName;
-            data[2] = "VehicleName=" + trackVehicleName;
-            data[3] = "LaunchSystemName=" + trackLaunchSystemName;
-            data[4] = "Price=" + trackPrice.ToString();
-            data[5] = "VehicleReturnFee=" + trackVehicleReturnFee.ToString();
             data[6] = "Time=" + trackMissionTime.ToString();
             data[7] = "Body=" + trackBody;
             data[8] = "MaxOrbitAltitude=" + trackMaxOrbitAltitude.ToString();
             data[9] = "Partcount" + trackPartCount;
-            data[10] = "MinimumCrew=" + trackMinimumCrew.ToString();
-            data[11] = "MaximumCrew=" + trackMaximumCrew.ToString();
+            data[10] = "MinimumCrew=" + trackCrew.ToString();
+            data[11] = "MaximumCrew=" + trackCrewCapacity.ToString();
             data[12] = "ReturnEnabled=" + trackReturnEnabled.ToString();
             data[13] = "SafeReturn=" + trackSafeReturn.ToString();
             data[14] = "ReturnResources=" + trackReturnResources;
@@ -576,7 +859,7 @@ namespace CommercialOfferings
             GUI.DragWindow(new Rect(0, 0, 200, 30));
             GUILayout.BeginVertical();
 
-            if (!trackingActive && isPreLaunch())
+            if (!trackingActive && RmmUtil.IsPreLaunch(vessel))
             {
                 if (trackWinMode != 0)
                 {
@@ -593,14 +876,14 @@ namespace CommercialOfferings
                     trackWinMode = 1;
                 }
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("tracking", labelStyle, GUILayout.Width(60));
-                if (GUILayout.Button("stop tracking", buttonStyle, GUILayout.Width(100), GUILayout.Height(22)))
+                GUILayout.Label("tracking", RmmStyle.Instance.LabelStyle, GUILayout.Width(60));
+                if (GUILayout.Button("stop tracking", RmmStyle.Instance.ButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
                 {
                     trackAbort();
                 }
                 GUILayout.EndHorizontal();
             }
-            else if (returnMission && !trackingActive && checkDocked())
+            else if (returnMission && !trackingActive && RmmUtil.IsDocked(vessel, part))
             {
                 if (trackWinMode != 2)
                 {
@@ -611,7 +894,7 @@ namespace CommercialOfferings
             }
             else
             {
-                closeGUITracking();
+                CloseGUITracking();
             }
 
             GUILayout.EndVertical();
@@ -620,28 +903,23 @@ namespace CommercialOfferings
         private void createMissionForm()
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Mission Name", labelStyle, GUILayout.Width(100));
-            trackStrName = GUILayout.TextField(trackStrName, 20, textFieldStyle, GUILayout.Width(200));
+            GUILayout.Label("Mission Name", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+            trackStrName = GUILayout.TextField(trackStrName, 20, RmmStyle.Instance.TextFieldStyle, GUILayout.Width(200));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Vehicle:", labelStyle, GUILayout.Width(100));
-            trackStrVehicleName = GUILayout.TextField(trackStrVehicleName, 50, textFieldStyle, GUILayout.Width(200));
+            GUILayout.Label("Vehicle:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+            trackStrVehicleName = GUILayout.TextField(trackStrVehicleName, 50, RmmStyle.Instance.TextFieldStyle, GUILayout.Width(200));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Launch System:", labelStyle, GUILayout.Width(100));
-            trackStrLaunchSystemName = GUILayout.TextField(trackStrLaunchSystemName, 50, textFieldStyle, GUILayout.Width(200));
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Start Mission", buttonStyle, GUILayout.Width(200), GUILayout.Height(22)))
+            if (GUILayout.Button("Start Mission", RmmStyle.Instance.ButtonStyle, GUILayout.Width(200), GUILayout.Height(22)))
             {
-                startMission();
+                //startMission();
             }
-            if (GUILayout.Button("Cancel", buttonStyle, GUILayout.Width(100), GUILayout.Height(22)))
+            if (GUILayout.Button("Cancel", RmmStyle.Instance.ButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
             {
-                closeGUITracking();
+                CloseGUITracking();
             }
             GUILayout.EndHorizontal();
         }
@@ -650,52 +928,26 @@ namespace CommercialOfferings
         private void returnMissionForm()
         {
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Start Return Mission", buttonStyle, GUILayout.Width(200), GUILayout.Height(22)))
+            if (GUILayout.Button("Start Return Mission", RmmStyle.Instance.ButtonStyle, GUILayout.Width(200), GUILayout.Height(22)))
             {
                 startReturnMission();
             }
-            if (GUILayout.Button("Cancel", buttonStyle, GUILayout.Width(100), GUILayout.Height(22)))
+            if (GUILayout.Button("Cancel", RmmStyle.Instance.ButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
             {
-                closeGUITracking();
+                CloseGUITracking();
             }
             GUILayout.EndHorizontal();
         }
 
-        private void startMission()
+
+
+        private void startReturnMission()
         {
             trackingActive = true;
-            trackingPrimary = true;
-            trackID = rand.Next(1000000, 9999999).ToString();
-            trackPartCount = 99999;
-            updatePartCount();
-            returnMission = false;
-            trackFolderName = trackID;
-            trackName = trackStrName;
-            trackCompanyName = "KSPCAMPAIGN:::" + HighLogic.SaveFolder;
-            trackVehicleName = trackStrVehicleName;
-            trackLaunchSystemName = trackStrLaunchSystemName;
-            trackReturnResources = "";
-            trackPrice = CalculateVesselPrice(true);
-            trackVehicleReturnFee = 0;
-            trackMissionStartTime = (float)Planetarium.GetUniversalTime();
-            trackMissionTime = 0;
-            trackBody = "";
-            trackMaxOrbitAltitude = 0;
-            trackDescription = "";
-            trackMinimumCrew = 99999;
-            updateMinCrewCount();
-            trackMaximumCrew = 99999;
-            updateMaxCrewCount();
-            trackReturnEnabled = false;
-            trackSafeReturn = false;
-            trackReturnResources = "";
-            trackReturnCargoMass = 0.0;
-            trackPort = 0;
-            trackDockingDistance = 0.15f;
-
-            Directory.CreateDirectory(GamePath + CommercialOfferingsPath + "Missions" + Path.DirectorySeparatorChar + trackFolderName);
-            nextLogicTime = Planetarium.GetUniversalTime();
-            setOtherModules();
+            trackPort = 2;
+            _partModule.nextLogicTime = Planetarium.GetUniversalTime();
+            updateTrackingVars(vessel);
+            updateNextLogicTime(vessel);
         }
 
 
@@ -705,41 +957,31 @@ namespace CommercialOfferings
             {
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
+                    if (pm.ClassName == "RMMModule")
                     {
                         RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        ComOffMod.trackID = trackID;
+                        ComOffMod.trackMissionId = trackMissionId;
                     }
                 }
             }
         }
 
-        private void setThisPortPrimary()
+        private void SetThisPortPrimary()
         {
             foreach (Part p in vessel.parts)
             {
-                foreach (PartModule pm in p.Modules)
+                RMMModule rmmModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
+                if (rmmModule != null && rmmModule.trackMissionId == trackMissionId)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
-                    {
-                        RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        ComOffMod.trackingPrimary = false;
-                        ComOffMod.PortCode = "";
-                    }
+                    rmmModule.trackingPrimary = false;
+                    rmmModule.PortCode = "";
                 }
             }
             trackingPrimary = true;
-            PortCode = "Mission Port";
+            _partModule.PortCode = "Mission Part";
         }
 
-        private void startReturnMission()
-        {
-            trackingActive = true;
-            returnMission = true;
-            nextLogicTime = Planetarium.GetUniversalTime();
-            updateTrackingVars(vessel);
-            updateNextLogicTime(vessel);
-        }
+
 
 
         private float CalculateVesselPrice(bool withCargo)
@@ -750,11 +992,11 @@ namespace CommercialOfferings
 
             if (trackReturnResources == "")
             {
-                determineProppellantArray(ref propellantResources);
+                //RmmUtil.DetermineProppellantArray(vessel, ref propellantResources);
             }
             else
             {
-                getProppellantArray(trackReturnResources, ref propellantResources);
+                RmmUtil.GetProppellantArray(trackReturnResources, ref propellantResources);
             }
             //cost parts
             foreach (Part p in vessel.parts)
@@ -764,11 +1006,11 @@ namespace CommercialOfferings
                 {
                     if (withCargo || propellantResources.Contains(r.info.name))
                     {
-                        missingResCost = missingResCost + cost(r.info.name, (r.maxAmount - r.amount));
+                        missingResCost = missingResCost + RmmUtil.Cost(r.info.name, (r.maxAmount - r.amount));
                     }
                     else
                     {
-                        missingResCost = missingResCost + cost(r.info.name, r.maxAmount);
+                        missingResCost = missingResCost + RmmUtil.Cost(r.info.name, r.maxAmount);
                     }
                 }
 
@@ -777,64 +1019,61 @@ namespace CommercialOfferings
             return ((float)price);
         }
 
-        private void drawGUITracking()
+        public void drawGUITracking()
         {
-            windowPosGUITracking = GUILayout.Window(3406, windowPosGUITracking, WindowGUITracking, "Mission Tracking", windowStyle);
+            windowPosGUITracking = GUILayout.Window(3406, windowPosGUITracking, WindowGUITracking, "Mission Tracking", RmmStyle.Instance.WindowStyle);
         }
 
-        [KSPEvent(name = "tracking", isDefault = false, guiActive = false, guiActiveEditor = true, guiName = "Track Mission")]
-        public void tracking()
+        public void trackingEvent()
         {
-            if (HighLogic.LoadedScene == GameScenes.EDITOR) 
+            if (HighLogic.LoadedScene == GameScenes.EDITOR)
             {
                 if (trackingPrimary)
                 {
                     trackingPrimary = false;
-                    PortCode = "";
+                    _partModule.PortCode = "";
                 }
                 else
                 {
                     trackingPrimary = true;
-                    PortCode = "Mission Port";
+                    _partModule.PortCode = "Mission Part";
                 }
-                
+
             }
-            
-            if (HighLogic.LoadedScene == GameScenes.FLIGHT) { openGUITracking(); }
+
+            if (HighLogic.LoadedScene == GameScenes.FLIGHT) { OpenGUITracking(); }
         }
 
-        public void openGUITracking()
+        public void OpenGUITracking()
         {
-            if (!trackingActive && isPreLaunch())
+            if (RmmUtil.IsPreLaunch(vessel) && !trackingActive)
             {
                 trackStrName = vessel.vesselName;
                 trackStrVehicleName = vessel.vesselName;
-                trackStrLaunchSystemName = vessel.vesselName;
-                setThisPortPrimary();
+                SetThisPortPrimary();
             }
-            initStyle();
+
+            if (returnMission && !trackingActive)
+            {
+                SetThisPortPrimary();
+            }
 
             renderGUITracking = true;
         }
 
-        public void closeGUITracking()
+        public void CloseGUITracking()
         {
             renderGUITracking = false;
         }
 
-        private bool isPreLaunch()
+        public void AbortTracking()
         {
-            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH ||
-                (FlightGlobals.ActiveVessel.situation == Vessel.Situations.LANDED &&
-                 (FlightGlobals.ActiveVessel.landedAt == "KSC_LaunchPad_Platform" ||
-                  FlightGlobals.ActiveVessel.landedAt == "Runway")))
-            {
-                return (true);
-            }
-            else
-            {
-                return (false);
-            }
+            trackAbort();
+        }
+
+        public Mission Mission
+        {
+            get { return _mission; }
         }
     }
 }

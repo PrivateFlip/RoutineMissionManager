@@ -1,4 +1,4 @@
-﻿/*Copyright (c) 2014, Flip van Toly
+﻿ /*Copyright (c) 2014, Flip van Toly
  All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are 
@@ -32,15 +32,21 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 using KSP.UI.Screens;
+using CommercialOfferings.Gui;
 
 namespace CommercialOfferings
 {
 
     [KSPAddon(KSPAddon.Startup.Flight, false)]
-    public class RMMGeneral : MonoBehaviour
+    public class RmmMonoBehaviour : MonoBehaviour
     {
+        private double _nextLogicTime = 1;
 
-      
+        private WindowManager _windowManager = new WindowManager();
+        private TrackingControl _trackingControl = new TrackingControl();
+        private RoutineControl _routineControl = new RoutineControl();
+
+        
 
         //stock toolbar button
         private ApplicationLauncherButton toolBarButton;
@@ -65,6 +71,8 @@ namespace CommercialOfferings
 
         private List<RMMModule> RegisteredModuleList = new List<RMMModule>();
 
+        public static RmmMonoBehaviour Instance = null;
+
         public void Awake()
         {
             renderGUILocation = false;
@@ -76,38 +84,30 @@ namespace CommercialOfferings
             if (toolBarButton != null) { removeToolbarButton(); }
         }
 
-       private void OnGUI()
+
+        private void OnGUI()
         {
+            if(Instance == null) { Instance = this; }
             if (Event.current.type == EventType.Repaint || Event.current.isMouse)
             {
                 // preDraw code
             }
 
-            drawGUI();
+            OnUpdate();
+            _windowManager.OnGUI();
+            _trackingControl.OnUpdate();
+            _routineControl.OnUpdate();
+
+            UpdateToolBar();
         }
 
-        private void drawGUI()
-        {
-            //Toolbar button
-            updateToolBar();
-
-            //GUI rendering
-            if (renderGUILocation)
-            {
-                drawGUILocation();
-            }
-            if (renderGUITermsCondi)
-            {
-                drawGUITermsCondi();
-            }
-        }
             
-        private void updateToolBar()
+        private void UpdateToolBar()
         {
 
             if (HighLogic.LoadedScene != GameScenes.FLIGHT || (lastUpdateToolBarTime + 3) > Planetarium.GetUniversalTime() || !ApplicationLauncher.Ready) { return; }
-            if (toolBarButton == null && toolBarButtonVisible()) { addToolbarButton(); }
-            if (toolBarButton != null && !toolBarButtonVisible()) { removeToolbarButton(); }
+            if (toolBarButton == null && ToolBarButtonVisible()) { addToolbarButton(); }
+            if (toolBarButton != null && !ToolBarButtonVisible()) { removeToolbarButton(); }
 
             lastUpdateToolBarTime = Planetarium.GetUniversalTime();
         }
@@ -134,41 +134,27 @@ namespace CommercialOfferings
 
         void onToggleOn()
         {
-            if (RmmUtil.IsPreLaunch(FlightGlobals.ActiveVessel)) { startTracking(); }
+            Menu();
 
-            if (trackingActive()) { startTracking(); return; }
-
-            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING &&
-                bodyAllowed())
+            // Add docking port modules
+            if (RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name) && FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING)
             {
-                startRoutine();
+                RmmDockingPortModule.AddToVessel(FlightGlobals.ActiveVessel);
             }
         }
 
         void onToggleOff()
         {
-            closeGUILocation();
-            foreach (Part p in FlightGlobals.ActiveVessel.parts)
-            {
-                foreach (PartModule pm in p.Modules)
-                {
-                    if (pm.ClassName == "RMMModule")
-                    {
-                        RMMModule aRMMModule;
-                        aRMMModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        aRMMModule.CloseGUITracking();
-                    }
-                }
-            }           
+            CancelMenu();
         }
 
-        private bool toolBarButtonVisible()
+        private bool ToolBarButtonVisible()
         {
             if (RmmUtil.IsPreLaunch(FlightGlobals.ActiveVessel) ||
                 (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING &&
-                 bodyAllowed() &&
-                 hasDockingPorts()) ||
-                trackingActive())
+                 RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name) &&
+                 RmmUtil.HasDockingPorts(FlightGlobals.ActiveVessel)) ||
+                RmmUtil.IsTrackingActive(FlightGlobals.ActiveVessel))
                 return (true);
             
             return (false);
@@ -198,114 +184,28 @@ namespace CommercialOfferings
         private void startRoutine()
         {
             if (!File.Exists(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "UserAcknowledgesKnownBugs")) { openGUITermsCondi(); return; }
-            openGUILocation();
         }
 
-        private bool trackingActive()
+        public void CreateDepartureTracking(Part dockingPort)
         {
-            foreach (Part p in FlightGlobals.ActiveVessel.parts)
-            {
-                foreach (PartModule pm in p.Modules)
-                {
-                    if (pm.ClassName == "RMMModule")
-                    {
-                        RMMModule aRMMModule;
-                        aRMMModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (aRMMModule.trackingActive && aRMMModule.trackingPrimary && !RmmUtil.ForeignDockingPorts(p.vessel, aRMMModule.trackID)) { return true; }
-                    }
-                }
-            }
-            return false;
+            _trackingControl.CreateDepartureTracking(dockingPort);
         }
 
-        private bool hasDockingPorts()
+        public void RegistrationVisible()
         {
-            foreach (Part p in FlightGlobals.ActiveVessel.parts)
-            {
-                foreach (PartModule pm in p.Modules)
-                {
-                    if (pm.ClassName == "RMMModule")
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            RmmDockingPortModule.AddToVessel(FlightGlobals.ActiveVessel);
         }
 
-        public bool bodyAllowed()
+        public void EnableDepartureTracking()
         {
-            if (allowedBodies == null)
-            {
-                allowedBodies = System.IO.File.ReadAllLines(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + "AllowedBodies.txt");
-            }
-
-            foreach (String allowedBody in allowedBodies)
-            {
-                if (FlightGlobals.ActiveVessel.mainBody.name == allowedBody.Trim()) { return (true); }
-            }
-
-            return (false);
+            RmmDockingPortModule.AddToVessel(FlightGlobals.ActiveVessel);
+            RmmDockingPortModule.SetEnableTracking(FlightGlobals.ActiveVessel, true);
         }
 
-        public Texture2D SimpleTexture(Color color)
+        public void EnableDockingPortRegistration()
         {
-            var texture = new Texture2D(1, 1);
-            texture.SetPixel(1, 1, color);
-
-            return texture;
-        }
-
-        /// <summary>
-        /// GUILocation
-        /// </summary>
-        /// <param name="windowID"></param>
-        private void WindowGUILocation(int windowID)
-        {
-            GUI.DragWindow(new Rect(0, 0, 350, 30));
-            if (rmmmSelectGUI != null)
-            {
-                rmmmSelectGUI.windowGUIMainX = windowPosGUILocation.xMin;
-                rmmmSelectGUI.windowGUIMainY = windowPosGUILocation.yMin + windowPosGUILocation.height;
-                rmmmSelectGUI.windowGUIMainWidth = windowPosGUILocation.width;
-            }
-            
-            GUILayout.BeginVertical();
-
-            scrollPositionModules = GUILayout.BeginScrollView(scrollPositionModules, true, false, RmmStyle.Instance.HoriScrollBarStyle, GUIStyle.none, GUILayout.Width(350), GUILayout.Height(50));
-            GUILayout.BeginHorizontal();
-            foreach (RMMModule rmmm in RegisteredModuleList)
-            {
-                if (GUILayout.Button(rmmm.PortCode, RmmStyle.Instance.ButtonStyle, GUILayout.Height(30)))
-                {
-                    if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
-                    rmmmSelectGUI = rmmm;
-                    rmmmSelectGUI.closeGUIMain();
-                    rmmmSelectGUI.openGUIMain();
-                }
-            }
-            GUILayout.EndHorizontal();
-            GUILayout.EndScrollView();
-
-            GUILayout.EndVertical();
-        }
-
-        private void drawGUILocation()
-        {
-            windowPosGUILocation = GUILayout.Window(3408, windowPosGUILocation, WindowGUILocation, "Location " + FlightGlobals.ActiveVessel.vesselName, RmmStyle.Instance.WindowStyle);
-        }
-
-        public void openGUILocation()
-        {
-            makeRegisteredModuleList();
-            if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
-            renderGUILocation = true;
-        }
-
-        public void closeGUILocation()
-        {
-            if (rmmmSelectGUI != null) { rmmmSelectGUI.closeGUIMain(); }
-            renderGUILocation = false;
+            RmmDockingPortModule.AddToVessel(FlightGlobals.ActiveVessel);
+            RmmDockingPortModule.SetEnableRegistration(FlightGlobals.ActiveVessel, true);
         }
 
         private void makeRegisteredModuleList()
@@ -320,7 +220,7 @@ namespace CommercialOfferings
                     {
                         RMMModule aRMMModule;
                         aRMMModule = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (aRMMModule.PortCode != "" && aRMMModule.OrderingEnabled && !aRMMModule.trackingActive) 
+                        if (aRMMModule.PortCode != "" && aRMMModule.IsDockingPort() && !aRMMModule.trackingActive) 
                         {
                             RegisteredModuleList.Add(aRMMModule);
                         }
@@ -378,5 +278,159 @@ namespace CommercialOfferings
         {
             if (toolBarButton != null) { removeToolbarButton(); }
         }
+
+
+        public void OnUpdate()
+        {
+            if (!HighLogic.LoadedSceneIsFlight) { return; }
+            if (_nextLogicTime == 0 || _nextLogicTime > Planetarium.GetUniversalTime()) { return; }
+
+
+            HandleMenuWindow();
+
+            _nextLogicTime = Planetarium.GetUniversalTime() + 1;
+        }
+
+        #region Menu
+
+        private MenuWindow _menuWindow = null;
+
+        private void HandleMenuWindow()
+        {
+            if (_menuWindow == null) { return; }
+            if (!WindowManager.IsOpen(_menuWindow))
+            {
+                CancelMenu();
+                return;
+            }
+
+            if (RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name) &&
+                (RmmUtil.IsPreLaunch(FlightGlobals.ActiveVessel) || FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING))
+            {
+                _menuWindow.TrackingEnabled = true;
+            }
+            else
+            {
+                _menuWindow.TrackingEnabled = false;
+            }
+
+            if (RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name) &&
+                FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING)
+            {
+                _menuWindow.RoutineArrivalEnabled = true;
+                _menuWindow.RoutineDepartureEnabled = true;
+                _menuWindow.RegisterDockingPortsEnabled = true;
+            }
+            else
+            {
+                _menuWindow.RoutineArrivalEnabled = false;
+                _menuWindow.RoutineDepartureEnabled = false;
+            }
+        }
+
+        public void CancelMenu()
+        {
+            if (_menuWindow != null)
+            {
+                WindowManager.Close(_menuWindow);
+                _menuWindow = null;
+            }
+        }
+
+        public void Menu()
+        {
+            CancelMenu();
+            _menuWindow = new MenuWindow(this);
+            WindowManager.Open(_menuWindow);
+        }
+
+        public void StartTrackingOption()
+        {
+            if (!RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name)) { return; }
+
+            if (!RmmUtil.IsTrackingActive(FlightGlobals.ActiveVessel) && RmmUtil.IsPreLaunch(FlightGlobals.ActiveVessel)) { _trackingControl.CreateLaunchTracking(FlightGlobals.ActiveVessel); }
+
+            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING)
+            {
+                EnableDepartureTracking();
+            }
+        }
+
+        public void TrackedMissionsOption()
+        {
+            _trackingControl.TrackingOverview(_menuWindow);
+        }
+
+
+        public void RoutineLaunchOption()
+        {
+            if (!RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name)) { return; }
+            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING)
+            {
+                _routineControl.RoutineOverview(_menuWindow);
+            }
+        }
+
+        public void RoutineDepartureOption()
+        {
+            if (!RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name)) { return; }
+            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING)
+            {
+                _routineControl.RoutineDepartureOverview(_menuWindow);
+            }
+        }
+
+        public void OrderedMissionsOption()
+        {
+            _routineControl.OrderedMissions(_menuWindow);
+        }
+
+        public void RegisterDockingPortsOption()
+        {
+            if (!RmmUtil.AllowedBody(FlightGlobals.ActiveVessel.mainBody.name)) { return; }
+            if (FlightGlobals.ActiveVessel.situation == Vessel.Situations.ORBITING)
+            {
+                EnableDockingPortRegistration();
+            }
+        }
+
+        public void ManualOption()
+        {
+            Manual();
+        }
+
+        #endregion Menu
+
+        #region Manual
+
+        private ManualWindow _manualWindow = null;
+
+        private void HandleManualWindow()
+        {
+            if (_manualWindow == null) { return; }
+            if (!WindowManager.IsOpen(_manualWindow))
+            {
+                CancelMenu();
+                return;
+            }
+        }
+
+        public void CancelManual()
+        {
+            if (_manualWindow != null)
+            {
+                WindowManager.Close(_manualWindow);
+                _manualWindow = null;
+            }
+        }
+
+        public void Manual()
+        {
+            CancelMenu();
+            _manualWindow = new ManualWindow(this);
+            WindowManager.Open(_manualWindow);
+        }
+
+        #endregion Manual
     }
 }

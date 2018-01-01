@@ -33,13 +33,14 @@ using System.Text;
 using UnityEngine;
 using KSP.UI.Screens;
 using Contracts;
+using CommercialOfferings.MissionData;
 
 namespace CommercialOfferings
 {
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public partial class RMMModule : PartModule
     {
-        List<Offering> OfferingsList = new List<Offering>();
+        List<Mission> OfferingsList = new List<Mission>();
 
         //current mission
         [KSPField(isPersistant = true, guiActive = false)]
@@ -50,7 +51,7 @@ namespace CommercialOfferings
         public float missionArrivalTime = 0;
         [KSPField(isPersistant = true, guiActive = false)]
         public int missionCrewCount = 0;
-        private Offering missionOffering = new Offering();
+        private Mission missionOffering = new Mission();
         [KSPField(isPersistant = true, guiActive = false)]
         public bool missionRepeat = false;
         [KSPField(isPersistant = true, guiActive = false)]
@@ -68,13 +69,12 @@ namespace CommercialOfferings
 
 
         //arrival transaction 
-        private double nextLogicTime = 0;
+        public double nextLogicTime = 0;
         public bool completeArrival = false;
         private int ArrivalStage = 0;
         Vessel transactionVessel = null;
         private string tempID = "";
-
-        static System.Random rand = new System.Random();
+        private uint missionFlightIDDockPart = 0;
 
         //Port Code
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Port Code", guiUnits = "")]
@@ -91,17 +91,17 @@ namespace CommercialOfferings
         public float windowGUIMainY = 1;
         public float windowGUIMainWidth = 10;
 
-        Offering selectedOffering = new Offering();
+        Mission selectedOffering = new Mission();
 
         //GUI Offering
         private bool renderGUIOffering = false;
         private static Rect windowPosGUIOffering = new Rect(300, 100, 100, 100);
-        Offering GUIOffering = new Offering();
+        Mission GUIOffering = new Mission();
 
         //GUI Order
         private bool renderGUIMission = false;
         private static Rect windowPosGUIMission = new Rect(500, 400, 300, 75);
-        Offering GUIMission = new Offering();
+        Mission GUIMission = new Mission();
         private int intCrewCount = 0;
         private string strCrewCount = "";
         //private string strGUIerrmess = "";
@@ -127,36 +127,12 @@ namespace CommercialOfferings
         public string commercialvehicleFolderName = "";
         [KSPField(isPersistant = true, guiActive = false)]
         public float commercialvehiclePartCount = 0.0f;
-        private Offering commercialvehicleOffering = new Offering();
+        private Mission commercialvehicleOffering = new Mission();
         private bool commercialvehicleOfferingLoaded = false;
 
 
 
-        private void setModule()
-        {
-            if (commercialvehiclemode && commercialvehicleOfferingLoaded)
-            {
-                Events["setAutoDepart"].guiActive = true;
-            }
-            else
-            {
-                Events["setAutoDepart"].guiActive = false;
-            }
 
-            if ((isPreLaunch() && !trackingActive) || (returnMission && checkDocked()))
-            {
-                Events["tracking"].guiActive = true;
-            }
-            else
-            {
-                Events["tracking"].guiActive = false;
-            }
-
-            if (PortCode == "" && vessel.situation == Vessel.Situations.ORBITING && AllowedBody())
-                Events["register"].guiActive = true;
-            else
-                Events["register"].guiActive = false;
-        }
 
         private bool handleCommercialVehicleMode()
         {
@@ -164,9 +140,9 @@ namespace CommercialOfferings
             {
                 loadOfferings();
 
-                foreach (Offering Off in OfferingsList)
+                foreach (Mission Off in OfferingsList)
                 {
-                    if (commercialvehicleFolderName == Off.folderName)
+                    if (commercialvehicleFolderName == Off.FolderPath)
                     {
                         commercialvehicleOffering = Off;
                         commercialvehicleOfferingLoaded = true;
@@ -179,7 +155,7 @@ namespace CommercialOfferings
 
             if (commercialvehiclemode)
             {
-                if (vehicleAutoDepart && !checkDocked())
+                if (vehicleAutoDepart && !RmmUtil.IsDocked(vessel, part))
                 {
                     if (!vessel.isActiveVessel)
                     {
@@ -262,9 +238,9 @@ namespace CommercialOfferings
         {
             loadOfferings();
 
-            foreach (Offering Off in OfferingsList)
+            foreach (Mission Off in OfferingsList)
             {
-                if (missionFolderName == Off.folderName)
+                if (missionFolderName == Off.FolderPath)
                 {
                     missionOffering = Off;
                 }
@@ -291,7 +267,7 @@ namespace CommercialOfferings
 
         private void dockStage2()
         {
-            toMapView();
+            RmmUtil.ToMapView();
             ProtoVessel ProtoFlightVessel = loadVessel(missionFolderName);
             if (ProtoFlightVessel == null) { abortArrival(); return; }
             if (loadVesselForRendezvous(ProtoFlightVessel, vessel))
@@ -349,34 +325,50 @@ namespace CommercialOfferings
 
         private void dockStage4()
         {
-            toMapView();
+            RmmUtil.ToMapView();
             Part placePort = new Part();
 
-            int portNumber = 0;
+            // int portNumber = 0;
             foreach (Part p in transactionVessel.parts)
             {
+                if (p.flightID == missionFlightIDDockPart)
+                {
+                    placePort = p;
+                }
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
-                    {
-                        RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackingPrimary == true)
-                        {
-                            placePort = p;
-                            if (missionOffering.ReturnEnabled)
-                            {
-                                ComOffMod.commercialvehiclemode = true;
-                                ComOffMod.commercialvehicleFolderName = missionOffering.folderName;
-                                ComOffMod.commercialvehiclePartCount = (float)countVesselParts(transactionVessel);
-                                ComOffMod.trackingPrimary = false;
-                            }
-                        }
-                        portNumber = portNumber + 1;
 
-                        ComOffMod.trackingActive = false;
-                        ComOffMod.returnMission = false;
-                        ComOffMod.trackID = "";
-                        ComOffMod.PortCode = "";
+                    //if (pm.GetType() == typeof(ModuleDockingNode))
+                    //{
+                    //    RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
+                    //    if (ComOffMod.trackingPrimary == true)
+                    //    {
+                    //        placePort = p;
+                    //        if (missionOffering.ReturnEnabled)
+                    //        {
+                    //            ComOffMod.commercialvehiclemode = true;
+                    //            ComOffMod.commercialvehicleFolderName = missionOffering.FolderPath;
+                    //            ComOffMod.commercialvehiclePartCount = (float)RmmUtil.CountVesselParts(transactionVessel);
+                    //            ComOffMod.trackingPrimary = false;
+                    //        }
+                    //    }
+                    //    portNumber = portNumber + 1;
+                    //
+                    //    ComOffMod.trackingActive = false;
+                    //    ComOffMod.returnMission = false;
+                    //    ComOffMod.trackMissionId = "";
+                    //    ComOffMod.PortCode = "";
+                    //}
+
+                    // empty all science
+                    if (pm.GetType() == typeof(ModuleScienceContainer))
+                    {
+                        ModuleScienceContainer moduleScienceContainer = (ModuleScienceContainer)pm;
+                        var scienceDatas  = moduleScienceContainer.GetData();
+                        for (int i = 0; i < scienceDatas.Count(); i++)
+                        {
+                            moduleScienceContainer.RemoveData(scienceDatas[i]);
+                        } 
                     }
                 }
             }
@@ -386,11 +378,11 @@ namespace CommercialOfferings
 
             handleLoadCrew(transactionVessel, missionCrewCount, missionOffering.MinimumCrew);
 
-            handleContracts(transactionVessel, true, false);
+            RmmContract.HandleContracts(transactionVessel, true, false);
             
-            if (!checkDocked() && checkDockingPortCompatibility(placePort, part))
+            if (!RmmUtil.IsDocked(vessel, part) && checkDockingPortCompatibility(placePort, part))
             {
-                placeVesselForDock(transactionVessel, placePort, vessel, part, missionOffering.DockingDistance);
+                placeVesselForDock(transactionVessel, placePort, vessel, part, RmmUtil.GetDockingDistance(placePort));
 
                 nextLogicTime = Planetarium.GetUniversalTime();
                 ArrivalStage = 5;
@@ -404,8 +396,8 @@ namespace CommercialOfferings
 
         private void dockStage5()
         {
-            toMapView();
-            if (checkDocked()
+            RmmUtil.ToMapView();
+            if (RmmUtil.IsDocked(vessel, part)
                 || (nextLogicTime < (Planetarium.GetUniversalTime() - 8)))
             {
                 ScreenMessages.PostScreenMessage(missionOffering.VehicleName + " docked", 4, ScreenMessageStyle.UPPER_CENTER);
@@ -417,8 +409,8 @@ namespace CommercialOfferings
         private ProtoVessel loadVessel(string folderName)
         {
             ConfigNode loadnode = null;
-            if (!File.Exists(GamePath + folderName + "/vesselfile")) { abortArrival(); return null; }
-            loadnode = ConfigNode.Load(GamePath + folderName + "/vesselfile");
+            if (!File.Exists(RmmUtil.GamePath + folderName + "/vesselfile")) { abortArrival(); return null; }
+            loadnode = ConfigNode.Load(RmmUtil.GamePath + folderName + "/vesselfile");
             if (loadnode == null) { abortArrival(); return null; }
             ProtoVessel loadprotovessel = new ProtoVessel(loadnode, HighLogic.CurrentGame);
             return loadprotovessel;
@@ -432,7 +424,7 @@ namespace CommercialOfferings
 
             placeVessel.orbitSnapShot.epoch = 0.0;
 
-            tempID = rand.Next(1000000000).ToString();
+            tempID = RmmUtil.Rand.Next(1000000000).ToString();
             //rename any vessels present with "AdministativeDockingName"
             foreach (Vessel ve in FlightGlobals.Vessels)
             {
@@ -450,16 +442,26 @@ namespace CommercialOfferings
 
             foreach (ProtoPartSnapshot p in placeVessel.protoPartSnapshots)
             {
+                uint newFlightID = (UInt32)RmmUtil.Rand.Next(1000000000, 2147483647);
+
+                // save flight ID of part which should dock
+                if (p.flightID == missionOffering.flightIDDockPart)
+                {
+                    missionFlightIDDockPart = newFlightID;
+                }
+
+                // update flight ID of each part and vessel reference transform id.
                 if (placeVessel.refTransform == p.flightID)
                 {
-                    p.flightID = (UInt32)rand.Next(1000000000, 2147483647);
+                    p.flightID = newFlightID;
                     placeVessel.refTransform = p.flightID;
                 }
                 else
                 {
-                    p.flightID = (UInt32)rand.Next(1000000000, 2147483647);
+                    p.flightID = newFlightID;
                 }
 
+                // clear out all crew 
                 if (p.protoModuleCrew != null && p.protoModuleCrew.Count() != 0)
                 {
                     List<ProtoCrewMember> cl = p.protoModuleCrew;
@@ -468,6 +470,15 @@ namespace CommercialOfferings
                     foreach (ProtoCrewMember c in clc)
                     {
                         p.RemoveCrew(c);
+                    }
+                }
+
+                foreach (ProtoPartModuleSnapshot pm in p.modules)
+                {
+                    if (pm.moduleName == "RMMModule")
+                    {
+                        pm.moduleValues.SetValue("trackingPrimary", false);
+                        pm.moduleValues.SetValue("trackingActive", false);
                     }
                 }
             }
@@ -530,34 +541,34 @@ namespace CommercialOfferings
                 double x = 0;
                 double y = 0;
                 double z = 0;
-                int ra = rand.Next(3);
+                int ra = RmmUtil.Rand.Next(3);
                 switch (ra)
                 {
                     case 0:
                         x = (double)rendezvousDistance;
-                        y = (double)rand.Next(rendezvousDistance);
-                        z = (double)rand.Next(rendezvousDistance);
+                        y = (double)RmmUtil.Rand.Next(rendezvousDistance);
+                        z = (double)RmmUtil.Rand.Next(rendezvousDistance);
                         break;
                     case 1:
-                        x = (double)rand.Next(rendezvousDistance);
+                        x = (double)RmmUtil.Rand.Next(rendezvousDistance);
                         y = (double)rendezvousDistance;
-                        z = (double)rand.Next(rendezvousDistance);
+                        z = (double)RmmUtil.Rand.Next(rendezvousDistance);
                         break;
                     case 2:
-                        x = (double)rand.Next(rendezvousDistance);
-                        y = (double)rand.Next(rendezvousDistance);
+                        x = (double)RmmUtil.Rand.Next(rendezvousDistance);
+                        y = (double)RmmUtil.Rand.Next(rendezvousDistance);
                         z = (double)rendezvousDistance;
                         break;
                 }
-                if (rand.Next(0, 2) == 1)
+                if (RmmUtil.Rand.Next(0, 2) == 1)
                 {
                     x = x * -1;
                 }
-                if (rand.Next(0, 2) == 1)
+                if (RmmUtil.Rand.Next(0, 2) == 1)
                 {
                     y = y * -1;
                 }
-                if (rand.Next(0, 2) == 1)
+                if (RmmUtil.Rand.Next(0, 2) == 1)
                 {
                     z = z * -1;
                 }
@@ -615,10 +626,10 @@ namespace CommercialOfferings
 
 
 
-            QuaternionD placeVesselRotation = targetDockingNode.controlTransform.rotation * Quaternion.Euler(180f, (float)rand.Next(0, 360), 0);
+            QuaternionD placeVesselRotation = targetDockingNode.controlTransform.rotation * Quaternion.Euler(180f, (float)RmmUtil.Rand.Next(0, 360), 0);
             placeVessel.SetRotation(placeVesselRotation);
 
-            placeVessel.SetRotation(placeDockingNode.controlTransform.rotation * Quaternion.Euler(0, (float)rand.Next(0, 360), 0));
+            placeVessel.SetRotation(placeDockingNode.controlTransform.rotation * Quaternion.Euler(0, (float)RmmUtil.Rand.Next(0, 360), 0));
 
 
             float anglePlaceDock = angleNormal(placeDockingNode.nodeTransform.forward.normalized, placeVessel.vesselTransform.forward.normalized, placeVessel.vesselTransform.up.normalized);
@@ -683,7 +694,7 @@ namespace CommercialOfferings
                 crewCount = ves.GetCrewCapacity();
 
             string[] prefCrewNames = new string[0];
-            getPreferredCrewNames(ref prefCrewNames);
+            getPreferredCrewNames (ref prefCrewNames);
 
             foreach (Part p in ves.parts)
             {
@@ -758,7 +769,7 @@ namespace CommercialOfferings
             ves.SpawnCrew();
         }
 
-        private bool crewAvailable(Offering Off)
+        private bool crewAvailable(Mission Off)
         {
             int availableCrew = 0;
             foreach (ProtoCrewMember cr in HighLogic.CurrentGame.CrewRoster.Crew)
@@ -857,47 +868,9 @@ namespace CommercialOfferings
             }
         }
 
-        private bool checkDocked()
-        {
-            ModuleDockingNode dockingPort = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
 
-            //this port is docked
-            if (dockingPort.state.Length >= 6 && dockingPort.state.Substring(0, 6) == "Docked" && null != dockingPort.vesselInfo.name)
-                return (true);
 
-            //no joined port filled
-            if (dockingPort.dockedPartUId == 0) {return (false);}
 
-            //find joined port
-            foreach (Part p in vessel.parts)
-            {
-                if (p.flightID == dockingPort.dockedPartUId)
-                {
-                    foreach (PartModule pm in p.Modules)
-                    {
-                        if (pm.ClassName == "ModuleDockingNode")
-                        {
-                            ModuleDockingNode joinedDockingPort = p.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-                            if (part.flightID == joinedDockingPort.dockedPartUId)
-                            {
-                                if (joinedDockingPort.state.Length >= 6 && joinedDockingPort.state.Substring(0, 6) == "Docked" && null != joinedDockingPort.vesselInfo.name)
-                                    return (true);
-                            }
-                        }
-                    }
-                }
-            }
-            return (false);
-        }
-
-        private bool checkDocking()
-        {
-            ModuleDockingNode dockingPort = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
-            if (dockingPort.state.Length >= 7 && dockingPort.state.Substring(0, 7) == "Acquire")
-                return (true);
-            else
-                return (false);
-        }
 
 
         private void handleAutoDepart()
@@ -907,9 +880,9 @@ namespace CommercialOfferings
                 && returnResourcesAvailable(commercialvehicleOffering)
                 && minimalCrewPresent(commercialvehicleOffering))
             {
-                toMapView();
+                RmmUtil.ToMapView();
 
-                handleContracts(vessel, false, true);
+                RmmContract.HandleContracts(vessel, false, true);
 
                 if (commercialvehicleOffering.SafeReturn && HighLogic.CurrentGame.Mode == Game.Modes.CAREER)
                 {
@@ -919,8 +892,8 @@ namespace CommercialOfferings
                 handleUnloadCrew(vessel, commercialvehicleOffering.SafeReturn);
                 vessel.Unload();
                 vessel.Die();
-                
-                ScreenMessages.PostScreenMessage(commercialvehicleOffering.VehicleName + " returned to " + HomeBodyName(), 4, ScreenMessageStyle.UPPER_CENTER);
+
+                ScreenMessages.PostScreenMessage(commercialvehicleOffering.VehicleName + " returned to " + RmmUtil.HomeBodyName(), 4, ScreenMessageStyle.UPPER_CENTER);
             }
             else
             {
@@ -936,7 +909,7 @@ namespace CommercialOfferings
 
             double cargoMass = commercialvehicleOffering.ReturnCargoMass;
             string[] cargoArray = new string[0];
-            getCargoArray(commercialvehicleOffering.ReturnResources, ref cargoArray);
+            //RmmUtil.GetCargoArray(vessel, commercialvehicleOffering.ReturnResources, ref cargoArray);
 
             orderCargoArray(ref cargoArray);
 
@@ -950,14 +923,14 @@ namespace CommercialOfferings
                         {
                             if (r.amount != 0)
                             {
-                                if (mass(r.info.name, r.amount) <= cargoMass)
+                                if (RmmUtil.Mass(r.info.name, r.amount) <= cargoMass)
                                 {
-                                    fee = fee + cost(r.info.name, r.amount);
-                                    cargoMass = cargoMass - mass(r.info.name, r.amount);
+                                    fee = fee + RmmUtil.Cost(r.info.name, r.amount);
+                                    cargoMass = cargoMass - RmmUtil.Mass(r.info.name, r.amount);
                                 }
                                 else
                                 {
-                                    fee = fee + ((cargoMass / mass(r.info.name, r.amount)) * cost(r.info.name, r.amount));
+                                    fee = fee + ((cargoMass / RmmUtil.Mass(r.info.name, r.amount)) * RmmUtil.Cost(r.info.name, r.amount));
                                     return fee;
                                 }
                             }
@@ -1029,7 +1002,7 @@ namespace CommercialOfferings
             return (false);
         }
 
-        private bool autoDepartAllowed(Offering Off)
+        private bool autoDepartAllowed(Mission Off)
         {
             if (offeringAllowed(Off))
             {
@@ -1044,7 +1017,7 @@ namespace CommercialOfferings
 
         private bool vesselClean(Vessel ves)
         {
-            if (commercialvehiclePartCount >= countVesselParts(ves))
+            if (commercialvehiclePartCount >= RmmUtil.CountVesselParts(ves))
             {
                 return (true);
             }
@@ -1056,22 +1029,22 @@ namespace CommercialOfferings
 
         }
 
-        private bool minimalCrewPresent(Offering Off)
+        private bool minimalCrewPresent(Mission Off)
         {
             if (Off.MinimumCrew == 0) { return (true); }
-            if (Off.MinimumCrew > astronautCrewCount(vessel)) { ScreenMessages.PostScreenMessage("not enough crew for return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
-            if (!Off.SafeReturn && crewCount(vessel) > 0) { ScreenMessages.PostScreenMessage("not rated for safe crew return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
+            if (Off.MinimumCrew > RmmUtil.AstronautCrewCount(vessel)) { ScreenMessages.PostScreenMessage("not enough crew for return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
+            if (!Off.SafeReturn && RmmUtil.CrewCount(vessel) > 0) { ScreenMessages.PostScreenMessage("not rated for safe crew return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
             return (true);
         }
 
-        private bool returnResourcesAvailable(Offering Off)
+        private bool returnResourcesAvailable(Mission Off)
         {
             if (Off.ReturnResources == "") { return (true); }
 
             string[] SplitArray = Off.ReturnResources.Split(',');
 
             string[] arrResource = new string[0];
-            determineProppellantArray(ref arrResource);
+            //RmmUtil.DetermineProppellantArray(vessel, ref arrResource);
 
             foreach (String st in SplitArray)
             {
@@ -1081,41 +1054,30 @@ namespace CommercialOfferings
 
                 if (!arrResource.Contains(resourceName)) { ScreenMessages.PostScreenMessage("vessel in unknown configuration for return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
 
-                if (amount * 0.99 > readResource(vessel, resourceName)) { ScreenMessages.PostScreenMessage("not enough resources for return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
+                if (amount * 0.99 > RmmUtil.ReadResource(vessel, resourceName)) { ScreenMessages.PostScreenMessage("not enough resources for return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
             }
 
             return (true);
         }
 
-        private bool returnCargoMassNotExceeded(Offering Off)
+        private bool returnCargoMassNotExceeded(Mission Off)
         {
-            if (Off.ReturnCargoMass == 0.0 || getCargoMass(Off.ReturnResources) <= Off.ReturnCargoMass * 1.1)
-            {
-                return true;
-            }
-            else
-            {
-                ScreenMessages.PostScreenMessage("cargo mass exceeds rated amount", 4, ScreenMessageStyle.UPPER_CENTER); 
-                return false;
-            }
+            //if (Off.ReturnCargoMass == 0.0 || RmmUtil.GetCargoMass(vessel, Off.ReturnResources) <= Off.ReturnCargoMass * 1.1)
+            //{
+            //    return true;
+            //}
+            //else
+            //{
+            //    ScreenMessages.PostScreenMessage("cargo mass exceeds rated amount", 4, ScreenMessageStyle.UPPER_CENTER); 
+            //    return false;
+            //}
+            return true;
         }
 
 
-        private int countVesselParts(Vessel ves)
-        {
-            int count = 0;
-            foreach (Part p in ves.parts)
-            {
-                count = count + 1;
-            }
-            return (count);
-        }
 
-        public void toMapView()
-        {
-            if (DevMode || MapView.MapIsEnabled) { return; }
-            MapView.EnterMapView();
-        }
+
+
         /// <summary>
         /// GUI Main
         /// </summary>
@@ -1128,8 +1090,8 @@ namespace CommercialOfferings
             GUILayout.BeginHorizontal();
 
             GUILayout.BeginVertical();
-            GUILayout.Label("Current:", labelStyle, GUILayout.Width(200));
-            if (GUILayout.Button(selectedOffering.Name, buttonStyle, GUILayout.Width(200), GUILayout.Height(22)))
+            GUILayout.Label("Current:", RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
+            if (GUILayout.Button(selectedOffering.Name, RmmStyle.Instance.ButtonStyle, GUILayout.Width(200), GUILayout.Height(22)))
             {
                 GUIOffering = selectedOffering;
                 intCrewCount = missionCrewCount;
@@ -1138,8 +1100,8 @@ namespace CommercialOfferings
             if (missionUnderway)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Underway", labelStyle, GUILayout.Width(100));
-                if (GUILayout.Button("Cancel", buttonStyle, GUILayout.Width(100), GUILayout.Height(22)))
+                GUILayout.Label("Underway", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+                if (GUILayout.Button("Cancel", RmmStyle.Instance.ButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
                 {
                     if (HighLogic.CurrentGame.Mode == Game.Modes.CAREER)
                     {
@@ -1155,34 +1117,34 @@ namespace CommercialOfferings
                 }
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("ETA:", labelStyle, GUILayout.Width(35));
-                GUILayout.Label(timeETAString(missionArrivalTime - Planetarium.GetUniversalTime()), labelStyle, GUILayout.Width(165));
+                GUILayout.Label("ETA:", RmmStyle.Instance.LabelStyle, GUILayout.Width(35));
+                GUILayout.Label(timeETAString(missionArrivalTime - Planetarium.GetUniversalTime()), RmmStyle.Instance.LabelStyle, GUILayout.Width(165));
                 GUILayout.EndHorizontal();
             }
             else
             {
-                GUILayout.Label("", labelStyle, GUILayout.Width(100));
+                GUILayout.Label("", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
             }
             GUILayout.EndVertical();
 
-            GUILayout.Label("  ", labelStyle, GUILayout.Width(10));
+            GUILayout.Label("  ", RmmStyle.Instance.LabelStyle, GUILayout.Width(10));
 
             GUILayout.BeginVertical();
             missionRepeat = GUILayout.Toggle(missionRepeat, "Repeat");
-            GUILayout.Label("Repeat Delay:", labelStyle, GUILayout.Width(80));
+            GUILayout.Label("Repeat Delay:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
             GUILayout.BeginHorizontal();
                         
-            if (GUILayout.Button("<", buttonStyle, GUILayout.Width(15), GUILayout.Height(15))) 
+            if (GUILayout.Button("<", RmmStyle.Instance.ButtonStyle, GUILayout.Width(15), GUILayout.Height(15))) 
             {
-                if (missionRepeatDelay >= 2) { missionRepeatDelay -= (missionRepeatDelay / 10 > 1 ? missionRepeatDelay/10 : 1); }
+                if (missionRepeatDelay >= 1) { missionRepeatDelay -= (missionRepeatDelay / 10 > 1 ? missionRepeatDelay/10 : 1); }
             }
-            GUILayout.Label( missionRepeatDelay.ToString(), labelStyle, GUILayout.Width(25));
-            if (GUILayout.Button(">", buttonStyle, GUILayout.Width(15), GUILayout.Height(15)))
+            GUILayout.Label( missionRepeatDelay.ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(25));
+            if (GUILayout.Button(">", RmmStyle.Instance.ButtonStyle, GUILayout.Width(15), GUILayout.Height(15)))
             {
                 if (missionRepeatDelay <= 999) { missionRepeatDelay += (missionRepeatDelay / 10 > 1 ? missionRepeatDelay / 10 : 1); }
                 if (missionRepeatDelay > 999) { missionRepeatDelay = 999; }
             }
-            GUILayout.Label("days", labelStyle, GUILayout.Width(30));
+            GUILayout.Label("days", RmmStyle.Instance.LabelStyle, GUILayout.Width(30));
                         
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
@@ -1190,9 +1152,9 @@ namespace CommercialOfferings
             GUILayout.EndHorizontal();
 
             scrollPositionAvailableCommercialOfferings = GUILayout.BeginScrollView(scrollPositionAvailableCommercialOfferings, false, true, GUILayout.Width(200), GUILayout.Height(300));
-            foreach (Offering Off in OfferingsList)
+            foreach (Mission Off in OfferingsList)
             {
-                if (GUILayout.Button(Off.Name, buttonStyle, GUILayout.Width(165), GUILayout.Height(22)))
+                if (GUILayout.Button(Off.Name, RmmStyle.Instance.ButtonStyle, GUILayout.Width(165), GUILayout.Height(22)))
                 {
                     GUIOffering = Off;
                     if (GUIOffering.MinimumCrew > 0)
@@ -1237,12 +1199,12 @@ namespace CommercialOfferings
                     ConfigNode savenode = new ConfigNode();
                     vessel.BackupVessel();
                     vessel.protoVessel.Save(savenode);
-                    savenode.Save(GamePath + CommercialOfferingsPath + Path.DirectorySeparatorChar + "Missions" + Path.DirectorySeparatorChar + "DevMode" + Path.DirectorySeparatorChar + "vesselfile");
+                    savenode.Save(RmmUtil.GamePath + RmmUtil.CommercialOfferingsPath + Path.DirectorySeparatorChar + "Missions" + Path.DirectorySeparatorChar + "DevMode" + Path.DirectorySeparatorChar + "vesselfile");
                 }
             }
             //
 
-            if (GUILayout.Button("Close", buttonStyle, GUILayout.Width(200), GUILayout.Height(22)))
+            if (GUILayout.Button("Close", RmmStyle.Instance.ButtonStyle, GUILayout.Width(200), GUILayout.Height(22)))
             {
                 closeGUIMain();
             }
@@ -1261,7 +1223,7 @@ namespace CommercialOfferings
             windowPosGUIMain.yMin = windowGUIMainY;
             windowPosGUIMain.width = windowGUIMainWidth;
             windowPosGUIMain.height = 450;
-            windowPosGUIMain = GUILayout.Window(3404, windowPosGUIMain, WindowGUIMain, "Docking Port " + PortCode, windowStyle);
+            windowPosGUIMain = GUILayout.Window(3404, windowPosGUIMain, WindowGUIMain, "Docking Port " + PortCode, RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUIMain()
@@ -1280,13 +1242,13 @@ namespace CommercialOfferings
         {
             OfferingsList.Clear();
 
-            loadOfferingsDirectory(GamePath + Path.DirectorySeparatorChar + "GameData");
+            loadOfferingsDirectory(RmmUtil.GamePath + Path.DirectorySeparatorChar + "GameData");
 
             if (missionFolderName != "")
             {
-                foreach (Offering Off in OfferingsList)
+                foreach (Mission Off in OfferingsList)
                 {
-                    if (Off.folderName == missionFolderName)
+                    if (Off.FolderPath == missionFolderName)
                     {
                         selectedOffering = Off;
                     }
@@ -1303,14 +1265,10 @@ namespace CommercialOfferings
 
                 foreach (String dir in directoryOfferings)
                 {
-                    
-                    Offering Off = new Offering();
-                    
-                    Off.folderName = dir.Substring(GamePath.ToString().Length, dir.Length - GamePath.ToString().Length);
-
-                    if (File.Exists(GamePath + Off.folderName + Path.DirectorySeparatorChar + "info.txt"))
+                    if (File.Exists(dir + Path.DirectorySeparatorChar + Mission.MISSION_FILE))
                     {
-                        Off.loadOffering(GamePath + Off.folderName + Path.DirectorySeparatorChar + "info.txt");
+                        string folderPath = dir.Substring(RmmUtil.GamePath.ToString().Length, dir.Length - RmmUtil.GamePath.ToString().Length);
+                        Mission Off = Mission.GetMissionByPath(folderPath);
 
                         if (offeringAllowed(Off))
                         {
@@ -1330,7 +1288,7 @@ namespace CommercialOfferings
             }
         }
 
-        private bool isCurrentCampaign(Offering off)
+        private bool isCurrentCampaign(Mission off)
         {
             if (isACampaign(off))
             {
@@ -1347,7 +1305,7 @@ namespace CommercialOfferings
         }
 
 
-        private bool isACampaign(Offering off)
+        private bool isACampaign(Mission off)
         {
             if (off.CompanyName.Length >= 14 && off.CompanyName.Substring(0, 14) == "KSPCAMPAIGN:::")
                 return (true);
@@ -1366,103 +1324,103 @@ namespace CommercialOfferings
             if (!isACampaign(GUIOffering))
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Company:", labelStyle, GUILayout.Width(100));
-                GUILayout.Label(GUIOffering.CompanyName, labelStyle, GUILayout.Width(200));
+                GUILayout.Label("Company:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+                GUILayout.Label(GUIOffering.CompanyName, RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
                 GUILayout.EndHorizontal();
             }
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Vehicle:", labelStyle, GUILayout.Width(100));
-            GUILayout.Label(GUIOffering.VehicleName, labelStyle, GUILayout.Width(200));
+            GUILayout.Label("Vehicle:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+            GUILayout.Label(GUIOffering.VehicleName, RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Launch System:", labelStyle, GUILayout.Width(100));
-            GUILayout.Label(GUIOffering.LaunchSystemName, labelStyle, GUILayout.Width(200));
+            GUILayout.Label("Launch System:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+            GUILayout.Label(GUIOffering.LaunchSystemName, RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Price:", labelStyle, GUILayout.Width(100));
-            GUILayout.Label(GUIOffering.Price.ToString() + ((GUIOffering.VehicleReturnFee > 0) ? " (" + (GUIOffering.Price - GUIOffering.VehicleReturnFee).ToString() + " with vehicle return)" : ""), labelStyle, GUILayout.Width(250));
+            GUILayout.Label("Price:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+            GUILayout.Label(GUIOffering.Price.ToString() + ((GUIOffering.VehicleReturnFee > 0) ? " (" + (GUIOffering.Price - GUIOffering.VehicleReturnFee).ToString() + " with vehicle return)" : ""), RmmStyle.Instance.LabelStyle, GUILayout.Width(250));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Arrival in:", labelStyle, GUILayout.Width(100));
-            GUILayout.Label(timeString(GUIOffering.Time), labelStyle, GUILayout.Width(200));
+            GUILayout.Label("Arrival in:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+            GUILayout.Label(timeString(GUIOffering.Time), RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
             GUILayout.EndHorizontal();
             if (GUIOffering.MinimumCrew > 0)
             {
                 if (GUIOffering.MinimumCrew < GUIOffering.MaximumCrew)
                 {
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label("Minimal crew required:", labelStyle, GUILayout.Width(150));
-                    GUILayout.Label(GUIOffering.MinimumCrew.ToString(), labelStyle, GUILayout.Width(200));
+                    GUILayout.Label("Minimal crew required:", RmmStyle.Instance.LabelStyle, GUILayout.Width(150));
+                    GUILayout.Label(GUIOffering.MinimumCrew.ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
                     GUILayout.EndHorizontal();
 
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label("Maximum crew capacity:", labelStyle, GUILayout.Width(150));
-                    GUILayout.Label(GUIOffering.MaximumCrew.ToString(), labelStyle, GUILayout.Width(200));
+                    GUILayout.Label("Maximum crew capacity:", RmmStyle.Instance.LabelStyle, GUILayout.Width(150));
+                    GUILayout.Label(GUIOffering.MaximumCrew.ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
                     GUILayout.EndHorizontal();
                 }
                 else
                 {
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label("Crew:", labelStyle, GUILayout.Width(100));
-                    GUILayout.Label(GUIOffering.MinimumCrew.ToString(), labelStyle, GUILayout.Width(200));
+                    GUILayout.Label("Crew:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+                    GUILayout.Label(GUIOffering.MinimumCrew.ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
                     GUILayout.EndHorizontal();
                 }
             }
             else if (GUIOffering.MinimumCrew < GUIOffering.MaximumCrew)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Crew capacity:", labelStyle, GUILayout.Width(100));
-                GUILayout.Label(GUIOffering.MaximumCrew.ToString(), labelStyle, GUILayout.Width(200));
+                GUILayout.Label("Crew capacity:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+                GUILayout.Label(GUIOffering.MaximumCrew.ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
                 GUILayout.EndHorizontal();
             }
             else if (GUIOffering.MinimumCrew == 0 && GUIOffering.MaximumCrew == 0)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Unmanned", labelStyle, GUILayout.Width(100));
+                GUILayout.Label("Unmanned", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
                 GUILayout.EndHorizontal();
             }
             if (!GUIOffering.ReturnEnabled)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("No return mission", labelStyle, GUILayout.Width(300));
+                GUILayout.Label("No return mission", RmmStyle.Instance.LabelStyle, GUILayout.Width(300));
                 GUILayout.EndHorizontal();
             }
             else if (!GUIOffering.SafeReturn)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("No safe return mission", labelStyle, GUILayout.Width(300));
+                GUILayout.Label("No safe return mission", RmmStyle.Instance.LabelStyle, GUILayout.Width(300));
                 GUILayout.EndHorizontal();
             }
             if (GUIOffering.ReturnResources != "")
             {
-                GUILayout.Label("Required return resources: ", labelStyle, GUILayout.Width(300));
+                GUILayout.Label("Required return resources: ", RmmStyle.Instance.LabelStyle, GUILayout.Width(300));
                 string[] SplitArray = GUIOffering.ReturnResources.Split(',');
                 foreach (String st in SplitArray)
                 {
                     string[] SplatArray = st.Split(':');
                     string resourceName = SplatArray[0].Trim();
                     double amount = Convert.ToDouble(SplatArray[1].Trim());
-                    GUILayout.Label("   " + resourceName + ": " + RoundToSignificantDigits(amount,4).ToString(), labelStyle, GUILayout.Width(300));
+                    GUILayout.Label("   " + resourceName + ": " + RoundToSignificantDigits(amount,4).ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(300));
                 }
             }
 
             if (GUIOffering.ReturnCargoMass != 0.0)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Return cargo mass: " + RoundToSignificantDigits(GUIOffering.ReturnCargoMass,3).ToString(), labelStyle, GUILayout.Width(300));
+                GUILayout.Label("Return cargo mass: " + RoundToSignificantDigits(GUIOffering.ReturnCargoMass,3).ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(300));
                 GUILayout.EndHorizontal();
             }
             GUILayout.BeginHorizontal();
-            GUILayout.Label("", redlabelStyle, GUILayout.Width(430));
-            if (GUILayout.Button("Delete", buttonStyle, GUILayout.Width(70), GUILayout.Height(22)))
+            GUILayout.Label("", RmmStyle.Instance.RedLabelStyle, GUILayout.Width(430));
+            if (GUILayout.Button("Delete", RmmStyle.Instance.ButtonStyle, GUILayout.Width(70), GUILayout.Height(22)))
             {
-                if (Directory.Exists(GamePath + GUIOffering.folderName))
+                if (Directory.Exists(RmmUtil.GamePath + GUIOffering.FolderPath))
                 {
-                    DeleteDirectory(GamePath + GUIOffering.folderName);
+                    DeleteDirectory(RmmUtil.GamePath + GUIOffering.FolderPath);
                     closeGUIOffering();
                     loadOfferings();
                 }
@@ -1473,7 +1431,7 @@ namespace CommercialOfferings
             GUILayout.BeginHorizontal();
             if (!missionUnderway)
             {
-                if (GUILayout.Button("Procure", buttonStyle, GUILayout.Width(300), GUILayout.Height(22)))
+                if (GUILayout.Button("Procure", RmmStyle.Instance.ButtonStyle, GUILayout.Width(300), GUILayout.Height(22)))
                 {
                     if (!missionUnderway)
                     {
@@ -1482,7 +1440,7 @@ namespace CommercialOfferings
                     }
                 }
             }
-            if (GUILayout.Button("Close", buttonStyle, GUILayout.Width(200), GUILayout.Height(22)))
+            if (GUILayout.Button("Close", RmmStyle.Instance.ButtonStyle, GUILayout.Width(200), GUILayout.Height(22)))
             {
                 closeGUIOffering();
             }
@@ -1493,18 +1451,20 @@ namespace CommercialOfferings
 
         private void drawGUIOffering()
         {
-            windowPosGUIOffering = GUILayout.Window(3414, windowPosGUIOffering, WindowGUIOffering, GUIOffering.Name, windowStyle);
+            windowPosGUIOffering = GUILayout.Window(3414, windowPosGUIOffering, WindowGUIOffering, GUIOffering.Name, RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUIOffering()
         {
-            print(GUIOffering.Name + " in folder: " + GUIOffering.folderName);
+            print(GUIOffering.Name + " in folder: " + GUIOffering.FolderPath);
             renderGUIOffering = true;
         }
 
         public void closeGUIOffering()
         {
             renderGUIOffering = false;
+            renderGUIMission = false;
+            renderGUIPrefCrew = false;
         }
 
         /// <summary>
@@ -1519,19 +1479,19 @@ namespace CommercialOfferings
             if (!isACampaign(GUIMission))
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Mission:", labelStyle, GUILayout.Width(100));
-                GUILayout.Label(GUIMission.Name, labelStyle, GUILayout.Width(200));
+                GUILayout.Label("Mission:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+                GUILayout.Label(GUIMission.Name, RmmStyle.Instance.LabelStyle, GUILayout.Width(200));
                 GUILayout.EndHorizontal();
             }
 
             if (GUIOffering.MinimumCrew < GUIOffering.MaximumCrew)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Planned crew:", labelStyle, GUILayout.Width(100));
-                GUILayout.Label(intCrewCount.ToString(), labelStyle, GUILayout.Width(50));
+                GUILayout.Label("Planned crew:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
+                GUILayout.Label(intCrewCount.ToString(), RmmStyle.Instance.LabelStyle, GUILayout.Width(50));
                 strCrewCount = GUILayout.TextField(strCrewCount, 3, GUILayout.Width(50));
 
-                if (GUILayout.Button("set", buttonStyle, GUILayout.Width(50), GUILayout.Height(22)))
+                if (GUILayout.Button("set", RmmStyle.Instance.ButtonStyle, GUILayout.Width(50), GUILayout.Height(22)))
                 {
                     int.TryParse(strCrewCount, out intCrewCount);
                     if (intCrewCount < GUIOffering.MinimumCrew) { intCrewCount = GUIOffering.MinimumCrew; }
@@ -1543,21 +1503,20 @@ namespace CommercialOfferings
             if (GUIOffering.MaximumCrew > 0)
             {
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("set preferred crew", buttonStyle, GUILayout.Width(300), GUILayout.Height(20)))
+                if (GUILayout.Button("set preferred crew", RmmStyle.Instance.ButtonStyle, GUILayout.Width(300), GUILayout.Height(20)))
                 {
                     openGUIPrefCrew();
                 }
                 GUILayout.EndHorizontal();
-                GUILayout.Label("   ", labelStyle, GUILayout.Width(100));
+                GUILayout.Label("   ", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
             }
 
-            if (GUILayout.Button("Confirm", buttonStyle, GUILayout.Width(300), GUILayout.Height(22)))
+            if (GUILayout.Button("Confirm", RmmStyle.Instance.ButtonStyle, GUILayout.Width(300), GUILayout.Height(22)))
             {
                 procureOffering(GUIOffering,false);
             }
-            if (GUILayout.Button("Close", buttonStyle, GUILayout.Width(300), GUILayout.Height(22)))
+            if (GUILayout.Button("Close", RmmStyle.Instance.ButtonStyle, GUILayout.Width(300), GUILayout.Height(22)))
             {
-                closeGUIPrefCrew();
                 closeGUIMission();
             }
 
@@ -1566,7 +1525,7 @@ namespace CommercialOfferings
 
         private void drawGUIMission()
         {
-            windowPosGUIMission = GUILayout.Window(3444, windowPosGUIMission, WindowGUIMission, "Mission", windowStyle);
+            windowPosGUIMission = GUILayout.Window(3444, windowPosGUIMission, WindowGUIMission, "Mission", RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUIMission()
@@ -1577,9 +1536,10 @@ namespace CommercialOfferings
         public void closeGUIMission()
         {
             renderGUIMission = false;
+            renderGUIPrefCrew = false;
         }
 
-        public void procureOffering(Offering Off,bool repeat)
+        public void procureOffering(Mission Off,bool repeat)
         {
             if (missionUnderway == true) { ScreenMessages.PostScreenMessage("already a mission underway", 4, ScreenMessageStyle.UPPER_CENTER); return; }
             if (!offeringAllowed(Off)) { ScreenMessages.PostScreenMessage("not rated for this orbit", 4, ScreenMessageStyle.UPPER_CENTER); return; }
@@ -1599,7 +1559,7 @@ namespace CommercialOfferings
 
 
             missionUnderway = true;
-            missionFolderName = Off.folderName;
+            missionFolderName = Off.FolderPath;
             if (!repeat)
             {
                 missionArrivalTime = (float)(Planetarium.GetUniversalTime() + Off.Time);
@@ -1615,7 +1575,7 @@ namespace CommercialOfferings
             INCsave = (float)vessel.orbit.inclination;
 
             selectedOffering = Off;
-            closeGUIMission();
+
             closeGUIOffering();
         }
 
@@ -1630,19 +1590,19 @@ namespace CommercialOfferings
             GUILayout.BeginVertical();
 
 
-            GUILayout.Label("Preferred:", labelStyle, GUILayout.Width(100));
+            GUILayout.Label("Preferred:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
 
             scrollPositionPreferredCrew = GUILayout.BeginScrollView(scrollPositionPreferredCrew, false, true, GUILayout.Width(200), GUILayout.Height(200));
             foreach (ProtoCrewMember cr in preferredCrewList)
             {
-                if (GUILayout.Button(cr.type == ProtoCrewMember.KerbalType.Tourist ? cr.name + " T" : cr.name, buttonStyle, GUILayout.Width(165), GUILayout.Height(22)))
+                if (GUILayout.Button(cr.type == ProtoCrewMember.KerbalType.Tourist ? cr.name + " T" : cr.name, RmmStyle.Instance.ButtonStyle, GUILayout.Width(165), GUILayout.Height(22)))
                 {
                     preferredCrewList.Remove(cr);
                 }
             }
             GUILayout.EndScrollView();
                 
-            GUILayout.Label("Roster:", labelStyle, GUILayout.Width(100));
+            GUILayout.Label("Roster:", RmmStyle.Instance.LabelStyle, GUILayout.Width(100));
 
 
             scrollPositionAvailableCrew = GUILayout.BeginScrollView(scrollPositionAvailableCrew, false, true, GUILayout.Width(200), GUILayout.Height(300));
@@ -1650,7 +1610,7 @@ namespace CommercialOfferings
             {
                 if (cr.rosterStatus != ProtoCrewMember.RosterStatus.Dead)
                 {
-                    if (GUILayout.Button(cr.name, buttonStyle, GUILayout.Width(165), GUILayout.Height(22)))
+                    if (GUILayout.Button(cr.name, RmmStyle.Instance.ButtonStyle, GUILayout.Width(165), GUILayout.Height(22)))
                     {
                         bool alreadyAdded = false;
                         foreach (ProtoCrewMember cre in preferredCrewList)
@@ -1666,7 +1626,7 @@ namespace CommercialOfferings
             }
             foreach (ProtoCrewMember to in HighLogic.CurrentGame.CrewRoster.Tourist)
             {
-                if (GUILayout.Button(to.name + " T", buttonStyle, GUILayout.Width(165), GUILayout.Height(22)))
+                if (GUILayout.Button(to.name + " T", RmmStyle.Instance.ButtonStyle, GUILayout.Width(165), GUILayout.Height(22)))
                 {
                     bool alreadyAdded = false;
                     foreach (ProtoCrewMember cre in preferredCrewList)
@@ -1682,7 +1642,7 @@ namespace CommercialOfferings
             GUILayout.EndScrollView();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Set", buttonStyle, GUILayout.Width(100), GUILayout.Height(22)))
+            if (GUILayout.Button("Set", RmmStyle.Instance.ButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
             {
                 missionPreferedCrew = "";
                 foreach (ProtoCrewMember cr in preferredCrewList)
@@ -1691,7 +1651,7 @@ namespace CommercialOfferings
                 }
                 closeGUIPrefCrew();
             }
-            if (GUILayout.Button("Close", buttonStyle, GUILayout.Width(100), GUILayout.Height(22)))
+            if (GUILayout.Button("Close", RmmStyle.Instance.ButtonStyle, GUILayout.Width(100), GUILayout.Height(22)))
             {
                 closeGUIPrefCrew();
             }
@@ -1702,7 +1662,7 @@ namespace CommercialOfferings
 
         private void drawGUIPrefCrew()
         {
-            windowPosGUIPrefCrew = GUILayout.Window(3447, windowPosGUIPrefCrew, WindowGUIPrefCrew, "Crew", windowStyle);
+            windowPosGUIPrefCrew = GUILayout.Window(3447, windowPosGUIPrefCrew, WindowGUIPrefCrew, "Crew", RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUIPrefCrew()
@@ -1772,7 +1732,7 @@ namespace CommercialOfferings
         [KSPEvent(name = "setAutoDepart", isDefault = false, guiActive = false, guiName = "Commence Return")]
         public void setAutoDepart()
         {
-            if (checkDocked())
+            if (RmmUtil.IsDocked(vessel, part))
             {
                 ModuleDockingNode DockNode = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
                 DockNode.Undock();
@@ -1787,9 +1747,9 @@ namespace CommercialOfferings
         /// <returns></returns>
         /// 
 
-        private bool offeringAllowed(Offering Off)
+        private bool offeringAllowed(Mission Off)
         {
-            if (vessel.mainBody.name == Off.Body && (vesselOrbitAltitude() < Off.MaxOrbitAltitude || Off.MaxOrbitAltitude == 0) && isCurrentCampaign(Off))
+            if (vessel.mainBody.name == Off.Body && (RmmUtil.OrbitAltitude(vessel) < 4 || Off.MaxOrbitAltitude == 0) && isCurrentCampaign(Off) && vessel.situation == Vessel.Situations.ORBITING)
             {
                 return (true);
             }
@@ -1797,11 +1757,6 @@ namespace CommercialOfferings
             {
                 return (false);
             }
-        }
-
-        public double vesselOrbitAltitude()
-        {
-            return ((vessel.orbit.semiMajorAxis - vessel.mainBody.Radius) / 1000);
         }
 
         //return a day-hour-minute-seconds-time format for the time
@@ -1922,116 +1877,9 @@ namespace CommercialOfferings
             return (strT);
         }
 
-        private void handleContracts(Vessel ves, bool arrive, bool depart)
-        {
-            //print("handling");
-
-            List<ProtoCrewMember> crew = new List<ProtoCrewMember>();
-            foreach (Part p in ves.parts)
-            {
-                if (p.CrewCapacity > 0 && p.protoModuleCrew.Count > 0)
-                {
-                    for (int c = 0; c < p.protoModuleCrew.Count; c++)
-                    {
-                        crew.Add(p.protoModuleCrew[c]);
-                    }
-                }
-            }
-
-            if (crew.Count == 0) {return;}
-
-            foreach (ProtoCrewMember c in crew)
-            {
-                bool contractsHandled = false;
-                while (!contractsHandled)
-                {
-                    contractsHandled = handleContractsForCrew(ves, arrive, depart, c);
-                }
-             }
-        }
 
 
-        private bool handleContractsForCrew(Vessel ves, bool arrive, bool depart, ProtoCrewMember crew)
-        {
-            //print("handling crew");
-            foreach (Contract con in Contracts.ContractSystem.Instance.Contracts)
-            {
-                if (con.ContractState == Contract.State.Active)
-                {
-                    if (ReferenceEquals(con.GetType(), typeof(FinePrint.Contracts.TourismContract)))
-                    {
-                        for (int i = 0; i < con.ParameterCount; i++)
-                        {
-                            ContractParameter conpara1 = con.GetParameter(i);
-                            if (ReferenceEquals(conpara1.GetType(), typeof(FinePrint.Contracts.Parameters.KerbalTourParameter)) && conpara1.State != Contracts.ParameterState.Complete)
-                            {
-                                FinePrint.Contracts.Parameters.KerbalTourParameter ktp = (FinePrint.Contracts.Parameters.KerbalTourParameter)conpara1;
 
-                                if (crew.name == ktp.kerbalName)
-                                {
-                                    // complete destinations parameters on arrive for kerbals on vessel
-                                    if (arrive)
-                                    {
-                                        for (int u = 0; u < conpara1.ParameterCount; u++)
-                                        {
-                                            ContractParameter conpara2 = conpara1.GetParameter(u);
-                                            if (ReferenceEquals(conpara2.GetType(), typeof(FinePrint.Contracts.Parameters.KerbalDestinationParameter)) && conpara2.State != Contracts.ParameterState.Complete)
-                                            {
-                                                FinePrint.Contracts.Parameters.KerbalDestinationParameter kds = (FinePrint.Contracts.Parameters.KerbalDestinationParameter)conpara2;
-
-                                                if (AllowedBody(vessel.mainBody.name))
-                                                {
-                                                    if (HomeBody(kds.targetBody.name) && (kds.targetType == FlightLog.EntryType.Orbit || kds.targetType == FlightLog.EntryType.Suborbit))
-                                                    {
-                                                        //print("complete1");
-                                                        CompleteContractParameter(kds);
-                                                        return false;
-                                                    }
-                                                }
-                                                if (AllowedBody(vessel.mainBody.name) && !HomeBody(vessel.mainBody.name))
-                                                {
-                                                    if (kds.targetBody.name == ves.mainBody.name && (kds.targetType == FlightLog.EntryType.Orbit || kds.targetType == FlightLog.EntryType.Flyby))
-                                                    {
-                                                        //print("complete2");
-                                                        CompleteContractParameter(kds);
-                                                        return false;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // complete kerbaltour parameters on depart which have all their destinations completed
-                                    if (depart)
-                                    {
-                                        if (conpara1.State != Contracts.ParameterState.Complete)
-                                        {
-                                            bool allDestinationsSucceeded = true;
-                                            for (int u = 0; u < conpara1.ParameterCount; u++)
-                                            {
-                                                ContractParameter conpara2 = conpara1.GetParameter(u);
-                                                if (conpara2.State != Contracts.ParameterState.Complete)
-                                                {
-                                                    allDestinationsSucceeded = false;
-                                                }
-                                            }
-                                            if (depart && allDestinationsSucceeded)
-                                            {
-                                                //print("complete3");
-                                                CompleteContractParameter(ktp);
-                                                HighLogic.CurrentGame.CrewRoster.Remove(crew);
-                                                return false;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
 
         /// <summary>
         /// Register Port Code logic
@@ -2066,7 +1914,7 @@ namespace CommercialOfferings
 
         private void drawGUIRegister()
         {
-            windowPosGUIRegister = GUI.Window(157, windowPosGUIRegister, WindowGUIRegister, "Register", windowStyle);
+            windowPosGUIRegister = GUI.Window(157, windowPosGUIRegister, WindowGUIRegister, "Register", RmmStyle.Instance.WindowStyle);
         }
 
         public void openGUIRegister()

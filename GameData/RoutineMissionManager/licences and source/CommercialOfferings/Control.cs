@@ -40,25 +40,27 @@ namespace CommercialOfferings
         [KSPField(isPersistant = false, guiActive = false)]
         public bool DevMode = false;
 
-        string GamePath;
-        string CommercialOfferingsPath = "GameData" + Path.DirectorySeparatorChar + "RoutineMissionManager" +  Path.DirectorySeparatorChar;
-
-        //GUI
-        private static GUIStyle windowStyle, labelStyle, redlabelStyle, textFieldStyle, buttonStyle;
-        private bool initializedStyles = false;
+        public Tracking TrackingModule;
 
         public override void OnAwake()
         {
             if (HighLogic.LoadedSceneIsFlight)
             {
-                GamePath = KSPUtil.ApplicationRootPath;
-
                 if (part != null) { part.force_activate(); }
+
+                TrackingModule = new Tracking(this);
+
                 ArrivalStage = 0;
                 nextLogicTime = Planetarium.GetUniversalTime();
 
                 if (DevMode) { OrderingEnabled = true; }
             }
+
+        }
+
+        public override void OnActive()
+        {
+            TrackingModule = new Tracking(this);
         }
 
         public override void OnFixedUpdate()
@@ -76,7 +78,8 @@ namespace CommercialOfferings
 
             if (trackingActive || trackingPrimary)
             {
-                if (!handleTracking()) { return; }
+                TrackingModule.handleTracking();
+                nextLogicTime = Planetarium.GetUniversalTime() + 1;
             }
             else
             {
@@ -91,22 +94,59 @@ namespace CommercialOfferings
             {
                 // preDraw code
             }
-            drawGUI();
+            //DrawGUI();
         }
 
-        private void drawGUI()
+        private void setModule()
         {
-            if (!initializedStyles)
+            if (commercialvehiclemode && commercialvehicleOfferingLoaded)
             {
-                initStyle();
-                initializedStyles = true;
+                Events["setAutoDepart"].guiActive = true;
             }
+            else
+            {
+                Events["setAutoDepart"].guiActive = false;
+            }
+            if ((RmmUtil.IsPreLaunch(vessel) && !trackingActive && IsDockingPort()) || (returnMission && !trackingActive))
+            {
 
-            //Tracking GUI rendering
-            if (renderGUITracking)
-            {
-                drawGUITracking();
+                Events["tracking"].guiActive = true;
             }
+            else
+            {
+
+                Events["tracking"].guiActive = false;
+            }
+            
+            if (PortCode == "" && vessel.situation == Vessel.Situations.ORBITING && RmmUtil.AllowedBody(vessel.mainBody.name) && IsDockingPort())
+                Events["register"].guiActive = true;
+            else
+                Events["register"].guiActive = false;
+        }
+
+        [KSPEvent(name = "tracking", isDefault = false, guiActive = false, guiActiveEditor = true, guiName = "Track Mission")]
+        public void tracking()
+        {
+            TrackingModule.trackingEvent();
+        }
+
+
+        public bool IsDockingPort()
+        {
+            foreach (PartModule pm in part.Modules)
+            {
+                if (pm.ClassName == "ModuleDockingNode")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void DrawGUI()
+        {
+            //Tracking GUI rendering
+            TrackingModule.DrawGUI();
 
             //Routine GUI rendering
             if (renderGUIMain)
@@ -131,28 +171,14 @@ namespace CommercialOfferings
             }
         }
 
-        private void initStyle()
+        public void OpenGUITracking()
         {
-            windowStyle = new GUIStyle(HighLogic.Skin.window);
-            windowStyle.stretchWidth = false;
-            windowStyle.stretchHeight = false;
+            TrackingModule.OpenGUITracking();
+        }
 
-            labelStyle = new GUIStyle(HighLogic.Skin.label);
-            labelStyle.stretchWidth = false;
-            labelStyle.stretchHeight = false;
-
-            redlabelStyle = new GUIStyle(HighLogic.Skin.label);
-            redlabelStyle.stretchWidth = false;
-            redlabelStyle.stretchHeight = false;
-            redlabelStyle.normal.textColor = Color.red;
-
-            textFieldStyle = new GUIStyle(HighLogic.Skin.textField);
-            textFieldStyle.stretchWidth = false;
-            textFieldStyle.stretchHeight = false;
-
-            buttonStyle = new GUIStyle(HighLogic.Skin.button);
-            buttonStyle.stretchHeight = false;
-            buttonStyle.stretchWidth = false;
+        public void CloseGUITracking()
+        {
+            TrackingModule.CloseGUITracking();
         }
     }
 }

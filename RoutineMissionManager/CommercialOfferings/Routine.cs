@@ -33,13 +33,14 @@ using System.Text;
 using UnityEngine;
 using KSP.UI.Screens;
 using Contracts;
+using CommercialOfferings.MissionData;
 
 namespace CommercialOfferings
 {
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public partial class RMMModule : PartModule
     {
-        List<Offering> OfferingsList = new List<Offering>();
+        List<Mission> OfferingsList = new List<Mission>();
 
         //current mission
         [KSPField(isPersistant = true, guiActive = false)]
@@ -50,7 +51,7 @@ namespace CommercialOfferings
         public float missionArrivalTime = 0;
         [KSPField(isPersistant = true, guiActive = false)]
         public int missionCrewCount = 0;
-        private Offering missionOffering = new Offering();
+        private Mission missionOffering = new Mission();
         [KSPField(isPersistant = true, guiActive = false)]
         public bool missionRepeat = false;
         [KSPField(isPersistant = true, guiActive = false)]
@@ -73,6 +74,7 @@ namespace CommercialOfferings
         private int ArrivalStage = 0;
         Vessel transactionVessel = null;
         private string tempID = "";
+        private uint missionFlightIDDockPart = 0;
 
         //Port Code
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "Port Code", guiUnits = "")]
@@ -89,17 +91,17 @@ namespace CommercialOfferings
         public float windowGUIMainY = 1;
         public float windowGUIMainWidth = 10;
 
-        Offering selectedOffering = new Offering();
+        Mission selectedOffering = new Mission();
 
         //GUI Offering
         private bool renderGUIOffering = false;
         private static Rect windowPosGUIOffering = new Rect(300, 100, 100, 100);
-        Offering GUIOffering = new Offering();
+        Mission GUIOffering = new Mission();
 
         //GUI Order
         private bool renderGUIMission = false;
         private static Rect windowPosGUIMission = new Rect(500, 400, 300, 75);
-        Offering GUIMission = new Offering();
+        Mission GUIMission = new Mission();
         private int intCrewCount = 0;
         private string strCrewCount = "";
         //private string strGUIerrmess = "";
@@ -125,36 +127,12 @@ namespace CommercialOfferings
         public string commercialvehicleFolderName = "";
         [KSPField(isPersistant = true, guiActive = false)]
         public float commercialvehiclePartCount = 0.0f;
-        private Offering commercialvehicleOffering = new Offering();
+        private Mission commercialvehicleOffering = new Mission();
         private bool commercialvehicleOfferingLoaded = false;
 
 
 
-        private void setModule()
-        {
-            if (commercialvehiclemode && commercialvehicleOfferingLoaded)
-            {
-                Events["setAutoDepart"].guiActive = true;
-            }
-            else
-            {
-                Events["setAutoDepart"].guiActive = false;
-            }
 
-            if ((RmmUtil.IsPreLaunch(vessel) && !trackingActive) || (returnMission && RmmUtil.CheckDocked(vessel, part)))
-            {
-                Events["tracking"].guiActive = true;
-            }
-            else
-            {
-                Events["tracking"].guiActive = false;
-            }
-
-            if (PortCode == "" && vessel.situation == Vessel.Situations.ORBITING && RmmUtil.AllowedBody(vessel.mainBody.name))
-                Events["register"].guiActive = true;
-            else
-                Events["register"].guiActive = false;
-        }
 
         private bool handleCommercialVehicleMode()
         {
@@ -162,9 +140,9 @@ namespace CommercialOfferings
             {
                 loadOfferings();
 
-                foreach (Offering Off in OfferingsList)
+                foreach (Mission Off in OfferingsList)
                 {
-                    if (commercialvehicleFolderName == Off.folderName)
+                    if (commercialvehicleFolderName == Off.FolderPath)
                     {
                         commercialvehicleOffering = Off;
                         commercialvehicleOfferingLoaded = true;
@@ -177,7 +155,7 @@ namespace CommercialOfferings
 
             if (commercialvehiclemode)
             {
-                if (vehicleAutoDepart && !RmmUtil.CheckDocked(vessel, part))
+                if (vehicleAutoDepart && !RmmUtil.IsDocked(vessel, part))
                 {
                     if (!vessel.isActiveVessel)
                     {
@@ -260,9 +238,9 @@ namespace CommercialOfferings
         {
             loadOfferings();
 
-            foreach (Offering Off in OfferingsList)
+            foreach (Mission Off in OfferingsList)
             {
-                if (missionFolderName == Off.folderName)
+                if (missionFolderName == Off.FolderPath)
                 {
                     missionOffering = Off;
                 }
@@ -289,7 +267,7 @@ namespace CommercialOfferings
 
         private void dockStage2()
         {
-            toMapView();
+            RmmUtil.ToMapView();
             ProtoVessel ProtoFlightVessel = loadVessel(missionFolderName);
             if (ProtoFlightVessel == null) { abortArrival(); return; }
             if (loadVesselForRendezvous(ProtoFlightVessel, vessel))
@@ -347,34 +325,50 @@ namespace CommercialOfferings
 
         private void dockStage4()
         {
-            toMapView();
+            RmmUtil.ToMapView();
             Part placePort = new Part();
 
-            int portNumber = 0;
+            // int portNumber = 0;
             foreach (Part p in transactionVessel.parts)
             {
+                if (p.flightID == missionFlightIDDockPart)
+                {
+                    placePort = p;
+                }
                 foreach (PartModule pm in p.Modules)
                 {
-                    if (pm.ClassName == "ModuleDockingNode")
-                    {
-                        RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
-                        if (ComOffMod.trackingPrimary == true)
-                        {
-                            placePort = p;
-                            if (missionOffering.ReturnEnabled)
-                            {
-                                ComOffMod.commercialvehiclemode = true;
-                                ComOffMod.commercialvehicleFolderName = missionOffering.folderName;
-                                ComOffMod.commercialvehiclePartCount = (float)RmmUtil.CountVesselParts(transactionVessel);
-                                ComOffMod.trackingPrimary = false;
-                            }
-                        }
-                        portNumber = portNumber + 1;
 
-                        ComOffMod.trackingActive = false;
-                        ComOffMod.returnMission = false;
-                        ComOffMod.trackID = "";
-                        ComOffMod.PortCode = "";
+                    //if (pm.GetType() == typeof(ModuleDockingNode))
+                    //{
+                    //    RMMModule ComOffMod = p.Modules.OfType<RMMModule>().FirstOrDefault();
+                    //    if (ComOffMod.trackingPrimary == true)
+                    //    {
+                    //        placePort = p;
+                    //        if (missionOffering.ReturnEnabled)
+                    //        {
+                    //            ComOffMod.commercialvehiclemode = true;
+                    //            ComOffMod.commercialvehicleFolderName = missionOffering.FolderPath;
+                    //            ComOffMod.commercialvehiclePartCount = (float)RmmUtil.CountVesselParts(transactionVessel);
+                    //            ComOffMod.trackingPrimary = false;
+                    //        }
+                    //    }
+                    //    portNumber = portNumber + 1;
+                    //
+                    //    ComOffMod.trackingActive = false;
+                    //    ComOffMod.returnMission = false;
+                    //    ComOffMod.trackMissionId = "";
+                    //    ComOffMod.PortCode = "";
+                    //}
+
+                    // empty all science
+                    if (pm.GetType() == typeof(ModuleScienceContainer))
+                    {
+                        ModuleScienceContainer moduleScienceContainer = (ModuleScienceContainer)pm;
+                        var scienceDatas  = moduleScienceContainer.GetData();
+                        for (int i = 0; i < scienceDatas.Count(); i++)
+                        {
+                            moduleScienceContainer.RemoveData(scienceDatas[i]);
+                        } 
                     }
                 }
             }
@@ -386,9 +380,9 @@ namespace CommercialOfferings
 
             RmmContract.HandleContracts(transactionVessel, true, false);
             
-            if (!RmmUtil.CheckDocked(vessel, part) && checkDockingPortCompatibility(placePort, part))
+            if (!RmmUtil.IsDocked(vessel, part) && checkDockingPortCompatibility(placePort, part))
             {
-                placeVesselForDock(transactionVessel, placePort, vessel, part, missionOffering.DockingDistance);
+                placeVesselForDock(transactionVessel, placePort, vessel, part, RmmUtil.GetDockingDistance(placePort));
 
                 nextLogicTime = Planetarium.GetUniversalTime();
                 ArrivalStage = 5;
@@ -402,8 +396,8 @@ namespace CommercialOfferings
 
         private void dockStage5()
         {
-            toMapView();
-            if (RmmUtil.CheckDocked(vessel, part)
+            RmmUtil.ToMapView();
+            if (RmmUtil.IsDocked(vessel, part)
                 || (nextLogicTime < (Planetarium.GetUniversalTime() - 8)))
             {
                 ScreenMessages.PostScreenMessage(missionOffering.VehicleName + " docked", 4, ScreenMessageStyle.UPPER_CENTER);
@@ -448,16 +442,26 @@ namespace CommercialOfferings
 
             foreach (ProtoPartSnapshot p in placeVessel.protoPartSnapshots)
             {
+                uint newFlightID = (UInt32)RmmUtil.Rand.Next(1000000000, 2147483647);
+
+                // save flight ID of part which should dock
+                if (p.flightID == missionOffering.flightIDDockPart)
+                {
+                    missionFlightIDDockPart = newFlightID;
+                }
+
+                // update flight ID of each part and vessel reference transform id.
                 if (placeVessel.refTransform == p.flightID)
                 {
-                    p.flightID = (UInt32)RmmUtil.Rand.Next(1000000000, 2147483647);
+                    p.flightID = newFlightID;
                     placeVessel.refTransform = p.flightID;
                 }
                 else
                 {
-                    p.flightID = (UInt32)RmmUtil.Rand.Next(1000000000, 2147483647);
+                    p.flightID = newFlightID;
                 }
 
+                // clear out all crew 
                 if (p.protoModuleCrew != null && p.protoModuleCrew.Count() != 0)
                 {
                     List<ProtoCrewMember> cl = p.protoModuleCrew;
@@ -466,6 +470,15 @@ namespace CommercialOfferings
                     foreach (ProtoCrewMember c in clc)
                     {
                         p.RemoveCrew(c);
+                    }
+                }
+
+                foreach (ProtoPartModuleSnapshot pm in p.modules)
+                {
+                    if (pm.moduleName == "RMMModule")
+                    {
+                        pm.moduleValues.SetValue("trackingPrimary", false);
+                        pm.moduleValues.SetValue("trackingActive", false);
                     }
                 }
             }
@@ -681,7 +694,7 @@ namespace CommercialOfferings
                 crewCount = ves.GetCrewCapacity();
 
             string[] prefCrewNames = new string[0];
-            getPreferredCrewNames(ref prefCrewNames);
+            getPreferredCrewNames (ref prefCrewNames);
 
             foreach (Part p in ves.parts)
             {
@@ -756,7 +769,7 @@ namespace CommercialOfferings
             ves.SpawnCrew();
         }
 
-        private bool crewAvailable(Offering Off)
+        private bool crewAvailable(Mission Off)
         {
             int availableCrew = 0;
             foreach (ProtoCrewMember cr in HighLogic.CurrentGame.CrewRoster.Crew)
@@ -867,7 +880,7 @@ namespace CommercialOfferings
                 && returnResourcesAvailable(commercialvehicleOffering)
                 && minimalCrewPresent(commercialvehicleOffering))
             {
-                toMapView();
+                RmmUtil.ToMapView();
 
                 RmmContract.HandleContracts(vessel, false, true);
 
@@ -896,7 +909,7 @@ namespace CommercialOfferings
 
             double cargoMass = commercialvehicleOffering.ReturnCargoMass;
             string[] cargoArray = new string[0];
-            RmmUtil.GetCargoArray(vessel, commercialvehicleOffering.ReturnResources, ref cargoArray);
+            //RmmUtil.GetCargoArray(vessel, commercialvehicleOffering.ReturnResources, ref cargoArray);
 
             orderCargoArray(ref cargoArray);
 
@@ -989,7 +1002,7 @@ namespace CommercialOfferings
             return (false);
         }
 
-        private bool autoDepartAllowed(Offering Off)
+        private bool autoDepartAllowed(Mission Off)
         {
             if (offeringAllowed(Off))
             {
@@ -1016,7 +1029,7 @@ namespace CommercialOfferings
 
         }
 
-        private bool minimalCrewPresent(Offering Off)
+        private bool minimalCrewPresent(Mission Off)
         {
             if (Off.MinimumCrew == 0) { return (true); }
             if (Off.MinimumCrew > RmmUtil.AstronautCrewCount(vessel)) { ScreenMessages.PostScreenMessage("not enough crew for return", 4, ScreenMessageStyle.UPPER_CENTER); return (false); }
@@ -1024,14 +1037,14 @@ namespace CommercialOfferings
             return (true);
         }
 
-        private bool returnResourcesAvailable(Offering Off)
+        private bool returnResourcesAvailable(Mission Off)
         {
             if (Off.ReturnResources == "") { return (true); }
 
             string[] SplitArray = Off.ReturnResources.Split(',');
 
             string[] arrResource = new string[0];
-            RmmUtil.DetermineProppellantArray(vessel, ref arrResource);
+            //RmmUtil.DetermineProppellantArray(vessel, ref arrResource);
 
             foreach (String st in SplitArray)
             {
@@ -1047,27 +1060,24 @@ namespace CommercialOfferings
             return (true);
         }
 
-        private bool returnCargoMassNotExceeded(Offering Off)
+        private bool returnCargoMassNotExceeded(Mission Off)
         {
-            if (Off.ReturnCargoMass == 0.0 || RmmUtil.GetCargoMass(vessel, Off.ReturnResources) <= Off.ReturnCargoMass * 1.1)
-            {
-                return true;
-            }
-            else
-            {
-                ScreenMessages.PostScreenMessage("cargo mass exceeds rated amount", 4, ScreenMessageStyle.UPPER_CENTER); 
-                return false;
-            }
+            //if (Off.ReturnCargoMass == 0.0 || RmmUtil.GetCargoMass(vessel, Off.ReturnResources) <= Off.ReturnCargoMass * 1.1)
+            //{
+            //    return true;
+            //}
+            //else
+            //{
+            //    ScreenMessages.PostScreenMessage("cargo mass exceeds rated amount", 4, ScreenMessageStyle.UPPER_CENTER); 
+            //    return false;
+            //}
+            return true;
         }
 
 
 
 
-        public void toMapView()
-        {
-            if (DevMode || MapView.MapIsEnabled) { return; }
-            MapView.EnterMapView();
-        }
+
         /// <summary>
         /// GUI Main
         /// </summary>
@@ -1142,7 +1152,7 @@ namespace CommercialOfferings
             GUILayout.EndHorizontal();
 
             scrollPositionAvailableCommercialOfferings = GUILayout.BeginScrollView(scrollPositionAvailableCommercialOfferings, false, true, GUILayout.Width(200), GUILayout.Height(300));
-            foreach (Offering Off in OfferingsList)
+            foreach (Mission Off in OfferingsList)
             {
                 if (GUILayout.Button(Off.Name, RmmStyle.Instance.ButtonStyle, GUILayout.Width(165), GUILayout.Height(22)))
                 {
@@ -1236,9 +1246,9 @@ namespace CommercialOfferings
 
             if (missionFolderName != "")
             {
-                foreach (Offering Off in OfferingsList)
+                foreach (Mission Off in OfferingsList)
                 {
-                    if (Off.folderName == missionFolderName)
+                    if (Off.FolderPath == missionFolderName)
                     {
                         selectedOffering = Off;
                     }
@@ -1255,14 +1265,10 @@ namespace CommercialOfferings
 
                 foreach (String dir in directoryOfferings)
                 {
-                    
-                    Offering Off = new Offering();
-                    
-                    Off.folderName = dir.Substring(RmmUtil.GamePath.ToString().Length, dir.Length - RmmUtil.GamePath.ToString().Length);
-
-                    if (File.Exists(RmmUtil.GamePath + Off.folderName + Path.DirectorySeparatorChar + "info.txt"))
+                    if (File.Exists(dir + Path.DirectorySeparatorChar + Mission.MISSION_FILE))
                     {
-                        Off.loadOffering(RmmUtil.GamePath + Off.folderName + Path.DirectorySeparatorChar + "info.txt");
+                        string folderPath = dir.Substring(RmmUtil.GamePath.ToString().Length, dir.Length - RmmUtil.GamePath.ToString().Length);
+                        Mission Off = Mission.GetMissionByPath(folderPath);
 
                         if (offeringAllowed(Off))
                         {
@@ -1282,7 +1288,7 @@ namespace CommercialOfferings
             }
         }
 
-        private bool isCurrentCampaign(Offering off)
+        private bool isCurrentCampaign(Mission off)
         {
             if (isACampaign(off))
             {
@@ -1299,7 +1305,7 @@ namespace CommercialOfferings
         }
 
 
-        private bool isACampaign(Offering off)
+        private bool isACampaign(Mission off)
         {
             if (off.CompanyName.Length >= 14 && off.CompanyName.Substring(0, 14) == "KSPCAMPAIGN:::")
                 return (true);
@@ -1412,9 +1418,9 @@ namespace CommercialOfferings
             GUILayout.Label("", RmmStyle.Instance.RedLabelStyle, GUILayout.Width(430));
             if (GUILayout.Button("Delete", RmmStyle.Instance.ButtonStyle, GUILayout.Width(70), GUILayout.Height(22)))
             {
-                if (Directory.Exists(RmmUtil.GamePath + GUIOffering.folderName))
+                if (Directory.Exists(RmmUtil.GamePath + GUIOffering.FolderPath))
                 {
-                    DeleteDirectory(RmmUtil.GamePath + GUIOffering.folderName);
+                    DeleteDirectory(RmmUtil.GamePath + GUIOffering.FolderPath);
                     closeGUIOffering();
                     loadOfferings();
                 }
@@ -1450,7 +1456,7 @@ namespace CommercialOfferings
 
         public void openGUIOffering()
         {
-            print(GUIOffering.Name + " in folder: " + GUIOffering.folderName);
+            print(GUIOffering.Name + " in folder: " + GUIOffering.FolderPath);
             renderGUIOffering = true;
         }
 
@@ -1533,7 +1539,7 @@ namespace CommercialOfferings
             renderGUIPrefCrew = false;
         }
 
-        public void procureOffering(Offering Off,bool repeat)
+        public void procureOffering(Mission Off,bool repeat)
         {
             if (missionUnderway == true) { ScreenMessages.PostScreenMessage("already a mission underway", 4, ScreenMessageStyle.UPPER_CENTER); return; }
             if (!offeringAllowed(Off)) { ScreenMessages.PostScreenMessage("not rated for this orbit", 4, ScreenMessageStyle.UPPER_CENTER); return; }
@@ -1553,7 +1559,7 @@ namespace CommercialOfferings
 
 
             missionUnderway = true;
-            missionFolderName = Off.folderName;
+            missionFolderName = Off.FolderPath;
             if (!repeat)
             {
                 missionArrivalTime = (float)(Planetarium.GetUniversalTime() + Off.Time);
@@ -1726,7 +1732,7 @@ namespace CommercialOfferings
         [KSPEvent(name = "setAutoDepart", isDefault = false, guiActive = false, guiName = "Commence Return")]
         public void setAutoDepart()
         {
-            if (RmmUtil.CheckDocked(vessel, part))
+            if (RmmUtil.IsDocked(vessel, part))
             {
                 ModuleDockingNode DockNode = part.Modules.OfType<ModuleDockingNode>().FirstOrDefault();
                 DockNode.Undock();
@@ -1741,9 +1747,9 @@ namespace CommercialOfferings
         /// <returns></returns>
         /// 
 
-        private bool offeringAllowed(Offering Off)
+        private bool offeringAllowed(Mission Off)
         {
-            if (vessel.mainBody.name == Off.Body && (RmmUtil.VesselOrbitAltitude(vessel) < Off.MaxOrbitAltitude || Off.MaxOrbitAltitude == 0) && isCurrentCampaign(Off))
+            if (vessel.mainBody.name == Off.Body && (RmmUtil.OrbitAltitude(vessel) < 4 || Off.MaxOrbitAltitude == 0) && isCurrentCampaign(Off) && vessel.situation == Vessel.Situations.ORBITING)
             {
                 return (true);
             }

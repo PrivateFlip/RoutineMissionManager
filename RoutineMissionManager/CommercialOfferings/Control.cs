@@ -40,24 +40,27 @@ namespace CommercialOfferings
         [KSPField(isPersistant = false, guiActive = false)]
         public bool DevMode = false;
 
-        private Tracking _tracking;
-
-        public RMMModule()
-        {
-            _tracking = new Tracking(this);
-        }
-
+        public Tracking TrackingModule;
 
         public override void OnAwake()
         {
             if (HighLogic.LoadedSceneIsFlight)
             {
                 if (part != null) { part.force_activate(); }
+
+                TrackingModule = new Tracking(this);
+
                 ArrivalStage = 0;
                 nextLogicTime = Planetarium.GetUniversalTime();
 
                 if (DevMode) { OrderingEnabled = true; }
             }
+
+        }
+
+        public override void OnActive()
+        {
+            TrackingModule = new Tracking(this);
         }
 
         public override void OnFixedUpdate()
@@ -75,7 +78,7 @@ namespace CommercialOfferings
 
             if (trackingActive || trackingPrimary)
             {
-                _tracking.handleTracking();
+                TrackingModule.handleTracking();
                 nextLogicTime = Planetarium.GetUniversalTime() + 1;
             }
             else
@@ -91,13 +94,59 @@ namespace CommercialOfferings
             {
                 // preDraw code
             }
-            DrawGUI();
+            //DrawGUI();
+        }
+
+        private void setModule()
+        {
+            if (commercialvehiclemode && commercialvehicleOfferingLoaded)
+            {
+                Events["setAutoDepart"].guiActive = true;
+            }
+            else
+            {
+                Events["setAutoDepart"].guiActive = false;
+            }
+            if ((RmmUtil.IsPreLaunch(vessel) && !trackingActive && IsDockingPort()) || (returnMission && !trackingActive))
+            {
+
+                Events["tracking"].guiActive = true;
+            }
+            else
+            {
+
+                Events["tracking"].guiActive = false;
+            }
+            
+            if (PortCode == "" && vessel.situation == Vessel.Situations.ORBITING && RmmUtil.AllowedBody(vessel.mainBody.name) && IsDockingPort())
+                Events["register"].guiActive = true;
+            else
+                Events["register"].guiActive = false;
+        }
+
+        [KSPEvent(name = "tracking", isDefault = false, guiActive = false, guiActiveEditor = true, guiName = "Track Mission")]
+        public void tracking()
+        {
+            TrackingModule.trackingEvent();
+        }
+
+
+        public bool IsDockingPort()
+        {
+            foreach (PartModule pm in part.Modules)
+            {
+                if (pm.ClassName == "ModuleDockingNode")
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void DrawGUI()
         {
             //Tracking GUI rendering
-            _tracking.DrawGUI();
+            TrackingModule.DrawGUI();
 
             //Routine GUI rendering
             if (renderGUIMain)
@@ -124,12 +173,12 @@ namespace CommercialOfferings
 
         public void OpenGUITracking()
         {
-            _tracking.OpenGUITracking();
+            TrackingModule.OpenGUITracking();
         }
 
         public void CloseGUITracking()
         {
-            _tracking.CloseGUITracking();
+            TrackingModule.CloseGUITracking();
         }
     }
 }
